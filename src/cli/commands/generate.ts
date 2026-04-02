@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as readline from 'readline';
 import { Command } from 'commander';
 import { getUserConfig } from '../../config/config';
 import {
@@ -16,8 +17,9 @@ import {
 } from '../../utils/exceptions';
 import { configureLogger } from '../../utils/log';
 import { biscuitcutter } from '../../core/main';
+import { parseExtraContext } from './helpers';
 
-function handleGenerateError(e: any): void {
+function handleGenerateError(e: unknown): void {
   if (
     e instanceof ContextDecodingError
     || e instanceof OutputDirExistsError
@@ -45,7 +47,6 @@ async function resolveAcceptHooks(value: string): Promise<boolean> {
   if (value !== 'ask') {
     return value === 'yes';
   }
-  const readline = require('readline');
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise<boolean>((resolve) => {
     rl.question('Do you want to execute hooks? [y/N]: ', (answer: string) => {
@@ -66,7 +67,7 @@ function listInstalledTemplates(
     console.error(
       `Error: Cannot list installed templates. Folder does not exist: ${biscuitcutterFolder}`,
     );
-    process.exit(-1);
+    process.exit(1);
   }
 
   const templateNames = fs
@@ -74,7 +75,7 @@ function listInstalledTemplates(
     .filter((folder) => fs.existsSync(
       path.join(biscuitcutterFolder, folder, 'biscuitcutter.json'),
     ) || fs.existsSync(
-      path.join(biscuitcutterFolder, folder, 'biscuitcutter.json (or cookiecutter.json)'),
+      path.join(biscuitcutterFolder, folder, 'cookiecutter.json'),
     ));
 
   console.log(`${templateNames.length} installed templates: `);
@@ -168,20 +169,7 @@ export function registerGenerateCommand(program: Command): void {
         opts.debugFile,
       );
 
-      let extraContext: Record<string, string> | null = null;
-      if (opts.extraContext) {
-        extraContext = {};
-        for (const item of opts.extraContext) {
-          if (!item.includes('=')) {
-            console.error(
-              `EXTRA_CONTEXT should contain items of the form key=value; '${item}' doesn't match that form`,
-            );
-            process.exit(1);
-          }
-          const [key, ...rest] = item.split('=');
-          extraContext[key] = rest.join('=');
-        }
-      }
+      const extraContext = parseExtraContext(opts.extraContext);
 
       const acceptHooks = await resolveAcceptHooks(opts.acceptHooks);
 
@@ -194,7 +182,7 @@ export function registerGenerateCommand(program: Command): void {
         await biscuitcutter({
           template,
           checkout: opts.checkout,
-          noInput: opts.noInput === false ? false : !opts.input,
+          noInput: opts.noInput,
           extraContext,
           replay,
           overwriteIfExists: opts.overwriteIfExists,

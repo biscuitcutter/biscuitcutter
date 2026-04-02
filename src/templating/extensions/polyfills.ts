@@ -33,26 +33,19 @@ export function registerPolyfills(): void {
   defineMethod('title', function (this: string) {
     return this.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.slice(1).toLowerCase());
   });
+  const stripChars = (str: string, chars: string, mode: 'both' | 'left' | 'right'): string => {
+    const escaped = chars.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const patterns = { both: `^[${escaped}]+|[${escaped}]+$`, left: `^[${escaped}]+`, right: `[${escaped}]+$` };
+    return str.replace(new RegExp(patterns[mode], 'g'), '');
+  };
   defineMethod('strip', function (this: string, chars?: string) {
-    if (chars) {
-      const escaped = chars.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return this.replace(new RegExp(`^[${escaped}]+|[${escaped}]+$`, 'g'), '');
-    }
-    return this.trim();
+    return chars ? stripChars(this, chars, 'both') : this.trim();
   });
   defineMethod('lstrip', function (this: string, chars?: string) {
-    if (chars) {
-      const escaped = chars.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return this.replace(new RegExp(`^[${escaped}]+`, 'g'), '');
-    }
-    return this.trimStart();
+    return chars ? stripChars(this, chars, 'left') : this.trimStart();
   });
   defineMethod('rstrip', function (this: string, chars?: string) {
-    if (chars) {
-      const escaped = chars.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return this.replace(new RegExp(`[${escaped}]+$`, 'g'), '');
-    }
-    return this.trimEnd();
+    return chars ? stripChars(this, chars, 'right') : this.trimEnd();
   });
   defineMethod('startswith', function (this: string, str: string) { return this.startsWith(str); });
   defineMethod('endswith', function (this: string, str: string) { return this.endsWith(str); });
@@ -88,6 +81,10 @@ export function patchNunjucksRuntime(): void {
 /**
  * Wrap env.renderString to temporarily apply Python-compatible replace/split
  * semantics and normalise raw block modifiers during rendering.
+ *
+ * WARNING: This temporarily mutates String.prototype.replace and .split globally.
+ * This is safe only because Nunjucks rendering is synchronous — no other code
+ * runs while the patched methods are in effect.
  */
 export function wrapRenderString(env: nunjucks.Environment): void {
   const originalRenderString = env.renderString.bind(env);

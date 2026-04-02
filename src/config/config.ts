@@ -55,7 +55,7 @@ export function mergeConfigs(
   defaultConfig: Record<string, any>,
   overwrite: Record<string, any>,
 ): Record<string, any> {
-  const newConfig = JSON.parse(JSON.stringify(defaultConfig));
+  const newConfig = structuredClone(defaultConfig);
 
   for (const [k, v] of Object.entries(overwrite)) {
     if (v && typeof v === 'object' && !Array.isArray(v)) {

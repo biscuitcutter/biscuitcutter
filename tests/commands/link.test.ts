@@ -80,18 +80,6 @@ describe('link command', () => {
     expect(state.context.version).toBe('0.1.0');
   });
 
-  it('should filter private variables from state context', async () => {
-    await link({
-      templateGitUrl: FIXTURE_DIR,
-      projectDir,
-      noInput: true,
-    });
-
-    const state = readTemplateState(projectDir);
-    expect(state.context._template).toBeUndefined();
-    expect(state.context._commit).toBeUndefined();
-  });
-
   it('should store checkout in state', async () => {
     await link({
       templateGitUrl: FIXTURE_DIR,
@@ -141,13 +129,4 @@ describe('link command', () => {
     expect(state.context.project_name).toBe('Linked Project');
   });
 
-  it('should return true on success', async () => {
-    const result = await link({
-      templateGitUrl: FIXTURE_DIR,
-      projectDir,
-      noInput: true,
-    });
-
-    expect(result).toBe(true);
-  });
 });

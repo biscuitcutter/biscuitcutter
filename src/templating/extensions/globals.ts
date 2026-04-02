@@ -2,7 +2,7 @@
  * Nunjucks global function implementations for Jinja2 compatibility.
  */
 
-import * as nunjucks from 'nunjucks';
+import type * as nunjucks from 'nunjucks';
 import { randomUUID } from 'crypto';
 import { strftime } from './strftime.js';
 

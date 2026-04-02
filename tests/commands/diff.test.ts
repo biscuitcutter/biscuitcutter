@@ -101,34 +101,18 @@ describe('diff command', () => {
     expect(result.diff).toContain('README.md');
   });
 
-  it('should return exit code 1 when exitCode option is true and diff exists', async () => {
+  it.each([
+    [true, 'some diff', 1],
+    [true, '', 0],
+    [false, 'some diff', 0],
+  ])('should return correct exit code (exitCode=%s, diff="%s", expected=%d)', async (exitCodeOpt, diffOutput, expected) => {
     writeState();
     createProjectFiles();
-    vi.mocked(gitUtils.getDiff).mockReturnValue('some diff');
+    vi.mocked(gitUtils.getDiff).mockReturnValue(diffOutput);
 
-    const result = await diff({ projectDir, exitCode: true });
+    const result = await diff({ projectDir, exitCode: exitCodeOpt });
 
-    expect(result.exitCode).toBe(1);
-  });
-
-  it('should return exit code 0 when exitCode option is true but no diff', async () => {
-    writeState();
-    createProjectFiles();
-    vi.mocked(gitUtils.getDiff).mockReturnValue('');
-
-    const result = await diff({ projectDir, exitCode: true });
-
-    expect(result.exitCode).toBe(0);
-  });
-
-  it('should return exit code 0 when exitCode is false even with diff', async () => {
-    writeState();
-    createProjectFiles();
-    vi.mocked(gitUtils.getDiff).mockReturnValue('some diff');
-
-    const result = await diff({ projectDir, exitCode: false });
-
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode).toBe(expected);
   });
 
   it('should use commit from state when no checkout is specified', async () => {
