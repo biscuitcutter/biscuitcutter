@@ -128,5 +128,4 @@ describe('link command', () => {
     const state = readTemplateState(projectDir);
     expect(state.context.project_name).toBe('Linked Project');
   });
-
 });
