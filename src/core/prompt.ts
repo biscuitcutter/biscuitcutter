@@ -9,6 +9,12 @@ import * as nunjucks from 'nunjucks';
 import { UndefinedVariableInTemplateError } from '../utils/exceptions';
 import { createEnvWithContext, rmtree } from '../utils/utils';
 
+function getPromptLabel(varName: string, prompts?: Record<string, any>): string {
+  return prompts && varName in prompts && prompts[varName]
+    ? prompts[varName]
+    : varName;
+}
+
 /**
  * Prompt user for variable and return the entered value or given default.
  */
@@ -18,9 +24,7 @@ export async function readUserVariable(
   prompts?: Record<string, any>,
   prefix: string = '',
 ): Promise<any> {
-  const question = prompts && varName in prompts && prompts[varName]
-    ? prompts[varName]
-    : varName;
+  const question = getPromptLabel(varName, prompts);
 
   const rl = readline.createInterface({
     input: process.stdin,
@@ -63,9 +67,7 @@ export async function readUserYesNo(
   prompts?: Record<string, any>,
   prefix: string = '',
 ): Promise<boolean> {
-  const question = prompts && varName in prompts && prompts[varName]
-    ? prompts[varName]
-    : varName;
+  const question = getPromptLabel(varName, prompts);
 
   const rl = readline.createInterface({
     input: process.stdin,
@@ -204,9 +206,7 @@ export async function readUserDict(
     throw new TypeError('Default value must be a dict/object');
   }
 
-  const question = prompts && varName in prompts && prompts[varName]
-    ? prompts[varName]
-    : varName;
+  const question = getPromptLabel(varName, prompts);
 
   const rl = readline.createInterface({
     input: process.stdin,

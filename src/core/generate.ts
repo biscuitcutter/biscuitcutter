@@ -75,15 +75,11 @@ export function isCopyOnlyPath(
   filePath: string,
   context: Record<string, any>,
 ): boolean {
-  try {
-    const dontRender: string[] = context.biscuitcutter?._copy_without_render || [];
-    for (const pattern of dontRender) {
-      if (minimatch(filePath, pattern)) {
-        return true;
-      }
+  const dontRender: string[] = context.biscuitcutter?._copy_without_render || [];
+  for (const pattern of dontRender) {
+    if (minimatch(filePath, pattern)) {
+      return true;
     }
-  } catch {
-    return false;
   }
   return false;
 }
@@ -277,16 +273,7 @@ export function generateFile(
   // Render the file
   const infileContent = fs.readFileSync(infile, 'utf-8');
 
-  let rendered: string;
-  try {
-    rendered = env.renderString(infileContent, context);
-  } catch (err: any) {
-    if (err.name === 'Template render error') {
-      // Re-throw with more detail
-      throw err;
-    }
-    throw err;
-  }
+  const rendered = env.renderString(infileContent, context);
 
   // Detect original line ending
   let newline = '\n';
@@ -326,7 +313,7 @@ export function renderAndCreateDir(
   environment: nunjucks.Environment,
   overwriteIfExists: boolean = false,
 ): [string, boolean] {
-  if (!dirname || dirname === '') {
+  if (!dirname) {
     throw new EmptyDirNameError('Error: directory name is empty');
   }
 

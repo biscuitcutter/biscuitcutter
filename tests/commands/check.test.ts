@@ -118,29 +118,19 @@ describe('check command', () => {
     );
   });
 
-  it('should pass strict option to isProjectUpdated', async () => {
+  it.each([
+    [false, false],
+    [undefined, true],
+  ])('should pass strict=%s (expected %s) to isProjectUpdated', async (strict, expected) => {
     writeState();
 
-    await check({ projectDir, strict: false });
+    await check({ projectDir, strict: strict as boolean | undefined });
 
     expect(gitUtils.isProjectUpdated).toHaveBeenCalledWith(
       expect.any(String),
       'old-commit-hash',
       'latest-commit-hash',
-      false,
-    );
-  });
-
-  it('should default strict to true', async () => {
-    writeState();
-
-    await check({ projectDir });
-
-    expect(gitUtils.isProjectUpdated).toHaveBeenCalledWith(
-      expect.any(String),
-      'old-commit-hash',
-      'latest-commit-hash',
-      true,
+      expected,
     );
   });
 });

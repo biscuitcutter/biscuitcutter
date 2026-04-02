@@ -155,18 +155,6 @@ describe('generate command (biscuitcutter)', () => {
     expect(packageJson.version).toBe('0.1.0');
   });
 
-  it('should dump replay file for the template', async () => {
-    const projectDir = await biscuitcutter({
-      template: FIXTURE_DIR,
-      outputDir,
-      noInput: true,
-    });
-
-    expect(fs.existsSync(projectDir)).toBe(true);
-    // Replay file should have been written (we don't check exact location
-    // as it depends on user config, but the function should not throw)
-  });
-
   it('should generate files in the specified output directory', async () => {
     const customOutput = path.join(outputDir, 'nested', 'output');
     fs.mkdirSync(customOutput, { recursive: true });

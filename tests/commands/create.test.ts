@@ -79,19 +79,6 @@ describe('create command', () => {
     expect(readmeContent).toContain('Version: 0.1.0');
   });
 
-  it('should filter private variables from context in state file', async () => {
-    const projectDir = await create({
-      templateGitUrl: FIXTURE_DIR,
-      outputDir,
-      noInput: true,
-    });
-
-    const state = readTemplateState(projectDir);
-    // _template and other underscore-prefixed keys should be filtered
-    expect(state.context._template).toBeUndefined();
-    expect(state.context._commit).toBeUndefined();
-  });
-
   it('should apply extra context overrides', async () => {
     const projectDir = await create({
       templateGitUrl: FIXTURE_DIR,

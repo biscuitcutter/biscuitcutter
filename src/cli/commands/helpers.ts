@@ -10,7 +10,7 @@ export function logSuccess(message: string): void { console.log('\x1b[32m%s\x1b[
 export function logWarning(message: string): void { console.log('\x1b[33m%s\x1b[0m', message); }
 export function logError(message: string): void { console.log('\x1b[31m%s\x1b[0m', message); }
 
-export function handleTrackingError(e: any): void {
+export function handleTrackingError(e: unknown): void {
   if (
     e instanceof TemplateStateNotFoundError
     || e instanceof TemplateStateExistsError

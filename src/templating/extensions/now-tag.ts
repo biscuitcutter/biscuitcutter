@@ -4,7 +4,7 @@
  */
 
 import * as nunjucks from 'nunjucks';
-import { strftime } from './strftime.js';
+import { nowGlobal } from './globals.js';
 
 export class NowExtension implements nunjucks.Extension {
   tags = ['now'];
@@ -22,22 +22,12 @@ export class NowExtension implements nunjucks.Extension {
     // Filter out the callback function that Nunjucks adds
     const filteredArgs = args.filter((arg) => typeof arg !== 'function');
 
-    // Default format
-    let format = '%Y-%m-%d';
-
     // Parse arguments: {% now 'utc', '%Y' %} or {% now '%Y' %}
     if (filteredArgs.length >= 2) {
       // timezone (ignored), format
-      [, format] = filteredArgs;
-    } else if (filteredArgs.length === 1) {
-      // Could be timezone or format
-      const arg = filteredArgs[0];
-      if (arg && arg.startsWith('%')) {
-        format = arg;
-      }
-      // If it's just 'utc' or 'local', use default format
+      return nowGlobal(undefined, filteredArgs[1]);
     }
-
-    return strftime(format, new Date());
+    // Single arg: could be timezone or format string
+    return nowGlobal(filteredArgs[0]);
   }
 }

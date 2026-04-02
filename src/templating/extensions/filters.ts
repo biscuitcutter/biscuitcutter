@@ -8,6 +8,9 @@ import type * as nunjucks from 'nunjucks';
  * Jsonify filter - converts object to JSON string with sorted keys.
  */
 export function jsonifyFilter(obj: any, indent: number = 4): string {
+  if (typeof obj !== 'object' || obj === null) {
+    return JSON.stringify(obj, null, indent);
+  }
   return JSON.stringify(obj, Object.keys(obj).sort(), indent);
 }
 
@@ -36,7 +39,7 @@ export function slugifyFilter(value: string, options?: Record<string, any>): str
  */
 export function createMapFilter(env: nunjucks.Environment) {
   return (arr: any[], filterNameOrAttr?: string | Record<string, any>, ...args: any[]) => {
-    if (!Array.isArray(arr) || !arr) return arr;
+    if (!Array.isArray(arr)) return arr;
 
     // Handle keyword arguments e.g. map(attribute='name')
     if (
