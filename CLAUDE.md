@@ -18,3 +18,5 @@ When creating a pull request, ALWAYS create a changeset file before committing a
 ```
 
 4. Commit the changeset file along with the code changes
+
+Skip the changeset for changes that don't affect the published package (e.g. editing CLAUDE.md, README.md, CI workflows, or other repo config files).
