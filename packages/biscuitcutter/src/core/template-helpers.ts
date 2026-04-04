@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { PathTraversalError } from '../utils/exceptions';
 
 /**
  * Filter out private variables (starting with _) from a context object.
@@ -24,7 +25,16 @@ export function findContextFile(dir: string): string {
 
 /**
  * Resolve the template directory within a repo, optionally descending into a subdirectory.
+ * Validates that the resolved path stays within repoDir to prevent path traversal.
  */
 export function resolveTemplateDir(repoDir: string, directory: string | null | undefined): string {
-  return directory ? path.join(repoDir, directory) : repoDir;
+  if (!directory) {
+    return repoDir;
+  }
+  const resolved = path.resolve(repoDir, directory);
+  const resolvedRepo = path.resolve(repoDir);
+  if (!resolved.startsWith(resolvedRepo + path.sep) && resolved !== resolvedRepo) {
+    throw new PathTraversalError(directory, repoDir);
+  }
+  return resolved;
 }
