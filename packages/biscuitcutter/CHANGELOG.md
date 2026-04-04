@@ -1,5 +1,11 @@
 # biscuitcutter
 
+## 0.0.10
+
+### Patch Changes
+
+- 6bcc8ed: Simplify codebase by extracting shared helpers, consolidating error handlers, reducing exception boilerplate, and merging two-pass prompt loop
+
 ## 0.0.9
 
 ### Patch Changes
