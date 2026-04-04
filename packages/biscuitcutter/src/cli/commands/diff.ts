@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { configureLogger } from '../../utils/log';
 import { diff } from '../../core/tracking';
-import { handleTrackingError } from './helpers';
+import { handleCommandError } from './helpers';
 
 export function registerDiffCommand(program: Command): void {
   program
@@ -23,7 +23,7 @@ export function registerDiffCommand(program: Command): void {
 
         process.exit(result.exitCode);
       } catch (e: any) {
-        handleTrackingError(e);
+        handleCommandError(e);
       }
     });
 }

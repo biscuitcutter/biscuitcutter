@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { configureLogger } from '../../utils/log';
 import { create } from '../../core/tracking';
-import { handleTrackingError, parseExtraContext } from './helpers';
+import { handleCommandError, parseExtraContext } from './helpers';
 
 export function registerCreateCommand(program: Command): void {
   program
@@ -37,7 +37,7 @@ export function registerCreateCommand(program: Command): void {
         });
         console.log(`Project created at ${projectDir}`);
       } catch (e: any) {
-        handleTrackingError(e);
+        handleCommandError(e);
       }
     });
 }

@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { configureLogger } from '../../utils/log';
 import { link } from '../../core/tracking';
-import { handleTrackingError, logSuccess, parseExtraContext } from './helpers';
+import { handleCommandError, logSuccess, parseExtraContext } from './helpers';
 
 export function registerLinkCommand(program: Command): void {
   program
@@ -31,7 +31,7 @@ export function registerLinkCommand(program: Command): void {
         });
         logSuccess('Project linked successfully!');
       } catch (e: any) {
-        handleTrackingError(e);
+        handleCommandError(e);
       }
     });
 }

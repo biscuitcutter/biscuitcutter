@@ -57,7 +57,6 @@ export {
   // Template tracking exceptions
   TemplateStateNotFoundError,
   TemplateStateExistsError,
-  InvalidCookiecutterRepositoryError,
   UnableToFindCookiecutterTemplateError,
   ChangesetUnicodeError,
   DirtyGitRepositoryError,
