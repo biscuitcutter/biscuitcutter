@@ -31,6 +31,7 @@ import {
 import { generateContext, generateFiles } from './generate';
 import { promptForConfig } from './prompt';
 import { expandAbbreviations } from '../repository/repository';
+import { filterPublicContext, findContextFile, resolveTemplateDir } from './template-helpers';
 
 const logger = getLogger('biscuitcutter.tracking');
 
@@ -345,22 +346,14 @@ async function generateTemplateForDiff(options: GenerateTemplateOptions): Promis
     resetToCommit(repoDir, checkout);
   }
 
-  const innerDir = templateState.directory ? path.join(repoDir, templateState.directory) : repoDir;
+  const innerDir = resolveTemplateDir(repoDir, templateState.directory);
 
-  const extraContext: Record<string, any> = {};
-  for (const [key, value] of Object.entries(templateState.context)) {
-    if (!key.startsWith('_')) {
-      extraContext[key] = value;
-    }
-  }
+  const extraContext = filterPublicContext(templateState.context);
 
   const targetCommit = checkout || getLatestCommit(repoDir);
   validateCookiecutterTemplate(innerDir);
 
-  let contextFile = path.join(innerDir, 'biscuitcutter.json');
-  if (!fs.existsSync(contextFile)) {
-    contextFile = path.join(innerDir, 'cookiecutter.json');
-  }
+  const contextFile = findContextFile(innerDir);
   const newContext = generateContext(contextFile, null, extraContext);
   newContext.biscuitcutter._template = templateState.template;
   newContext.biscuitcutter._commit = targetCommit;
@@ -494,10 +487,7 @@ export async function create(options: CreateOptions): Promise<string> {
     const repoDir = cloneRepo(templateGitUrl, path.join(tempDir, 'repo'), checkout);
     const lastCommit = getLatestCommit(repoDir);
 
-    let cookiecutterTemplateDir = repoDir;
-    if (directory) {
-      cookiecutterTemplateDir = path.join(repoDir, directory);
-    }
+    const cookiecutterTemplateDir = resolveTemplateDir(repoDir, directory);
 
     validateCookiecutterTemplate(cookiecutterTemplateDir);
 
@@ -509,10 +499,7 @@ export async function create(options: CreateOptions): Promise<string> {
     }
 
     const configDict = getUserConfig(configFile, defaultConfig);
-    let contextFile = path.join(cookiecutterTemplateDir, 'biscuitcutter.json');
-    if (!fs.existsSync(contextFile)) {
-      contextFile = path.join(cookiecutterTemplateDir, 'cookiecutter.json');
-    }
+    const contextFile = findContextFile(cookiecutterTemplateDir);
     const context = generateContext(contextFile, configDict.default_context, extraContext);
 
     if (!noInput) {
@@ -533,19 +520,11 @@ export async function create(options: CreateOptions): Promise<string> {
       false,
     );
 
-    // Filter out private variables (they're machine-specific)
-    const filteredContext: Record<string, any> = {};
-    for (const [key, value] of Object.entries(context.biscuitcutter)) {
-      if (!key.startsWith('_')) {
-        filteredContext[key] = value;
-      }
-    }
-
     const templateState: TemplateState = {
       template: templateGitUrl,
       commit: lastCommit,
       checkout,
-      context: filteredContext,
+      context: filterPublicContext(context.biscuitcutter),
       directory,
     };
 
@@ -740,13 +719,7 @@ export async function update(options: UpdateOptions = {}): Promise<UpdateResult>
     workingState.commit = latestCommit;
     workingState.checkout = checkout;
     // Use flattened context from new template (choice arrays resolved to selected values)
-    const filteredContext: Record<string, any> = {};
-    for (const [key, value] of Object.entries(newContext.biscuitcutter)) {
-      if (!key.startsWith('_')) {
-        filteredContext[key] = value;
-      }
-    }
-    workingState.context = filteredContext;
+    workingState.context = filterPublicContext(newContext.biscuitcutter);
     if (templatePath) {
       workingState.template = templateGitUrl;
     }
@@ -844,18 +817,12 @@ export async function link(options: LinkOptions): Promise<boolean> {
     const repoDir = cloneRepo(templateGitUrl, path.join(tempDir, 'repo'), checkout);
     const lastCommit = getLatestCommit(repoDir);
 
-    let cookiecutterTemplateDir = repoDir;
-    if (directory) {
-      cookiecutterTemplateDir = path.join(repoDir, directory);
-    }
+    const cookiecutterTemplateDir = resolveTemplateDir(repoDir, directory);
 
     validateCookiecutterTemplate(cookiecutterTemplateDir);
 
     const configDict = getUserConfig(configFile, defaultConfig);
-    let contextFile = path.join(cookiecutterTemplateDir, 'biscuitcutter.json');
-    if (!fs.existsSync(contextFile)) {
-      contextFile = path.join(cookiecutterTemplateDir, 'cookiecutter.json');
-    }
+    const contextFile = findContextFile(cookiecutterTemplateDir);
     const context = generateContext(contextFile, configDict.default_context, extraContext);
 
     if (!noInput) {
@@ -888,19 +855,11 @@ export async function link(options: LinkOptions): Promise<boolean> {
       useCommit = commitChoice || lastCommit;
     }
 
-    // Filter out private variables (they're machine-specific)
-    const filteredContext: Record<string, any> = {};
-    for (const [key, value] of Object.entries(context.biscuitcutter)) {
-      if (!key.startsWith('_')) {
-        filteredContext[key] = value;
-      }
-    }
-
     const templateState: TemplateState = {
       template: templateGitUrl,
       commit: useCommit,
       checkout,
-      context: filteredContext,
+      context: filterPublicContext(context.biscuitcutter),
       directory,
     };
 

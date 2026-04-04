@@ -6,7 +6,6 @@
  */
 
 import * as path from 'path';
-import * as fs from 'fs';
 import { getLogger } from '../utils/log';
 import { getUserConfig } from '../config/config';
 import { InvalidModeError } from '../utils/exceptions';
@@ -18,6 +17,7 @@ import { determineRepoDir } from '../repository/repository';
 import { rmtree } from '../utils/utils';
 import { writeTemplateState, TemplateState } from './tracking';
 import { getLatestCommit, isGitRepo } from '../utils/git';
+import { filterPublicContext, findContextFile } from './template-helpers';
 
 const logger = getLogger('biscuitcutter.main');
 
@@ -112,10 +112,7 @@ export async function biscuitcutter(options: BiscuitCutterOptions): Promise<stri
     }
   }
 
-  let contextFile = path.join(repoDir, 'biscuitcutter.json');
-  if (!fs.existsSync(contextFile)) {
-    contextFile = path.join(repoDir, 'cookiecutter.json');
-  }
+  const contextFile = findContextFile(repoDir);
   logger.debug('context_file is %s', contextFile);
 
   let context: Record<string, any>;
@@ -196,12 +193,7 @@ export async function biscuitcutter(options: BiscuitCutterOptions): Promise<stri
   try {
     const commit = isGitRepo(baseRepoDir) ? getLatestCommit(baseRepoDir) : null;
     // Filter out private variables (they're machine-specific and not useful for tracking)
-    const filteredContext: Record<string, any> = {};
-    for (const [key, value] of Object.entries(context.biscuitcutter)) {
-      if (!key.startsWith('_')) {
-        filteredContext[key] = value;
-      }
-    }
+    const filteredContext = filterPublicContext(context.biscuitcutter);
     const templateState: TemplateState = {
       template,
       commit: commit || 'unknown',

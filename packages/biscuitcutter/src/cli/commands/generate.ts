@@ -3,45 +3,9 @@ import * as path from 'path';
 import * as readline from 'readline';
 import { Command } from 'commander';
 import { getUserConfig } from '../../config/config';
-import {
-  ContextDecodingError,
-  EmptyDirNameError,
-  FailedHookError,
-  InvalidModeError,
-  InvalidZipRepositoryError,
-  OutputDirExistsError,
-  RepositoryCloneFailedError,
-  RepositoryNotFoundError,
-  UndefinedVariableInTemplateError,
-  UnknownExtensionError,
-} from '../../utils/exceptions';
 import { configureLogger } from '../../utils/log';
 import { biscuitcutter } from '../../core/main';
-import { parseExtraContext } from './helpers';
-
-function handleGenerateError(e: unknown): void {
-  if (
-    e instanceof ContextDecodingError
-    || e instanceof OutputDirExistsError
-    || e instanceof EmptyDirNameError
-    || e instanceof InvalidModeError
-    || e instanceof FailedHookError
-    || e instanceof UnknownExtensionError
-    || e instanceof InvalidZipRepositoryError
-    || e instanceof RepositoryNotFoundError
-    || e instanceof RepositoryCloneFailedError
-  ) {
-    console.error(e.message);
-    process.exit(1);
-  } else if (e instanceof UndefinedVariableInTemplateError) {
-    console.error(e.message);
-    console.error(`Error message: ${e.error.message}`);
-    console.error(`Context: ${JSON.stringify(e.context, null, 4)}`);
-    process.exit(1);
-  } else {
-    throw e;
-  }
-}
+import { parseExtraContext, handleCommandError } from './helpers';
 
 async function resolveAcceptHooks(value: string): Promise<boolean> {
   if (value !== 'ask') {
@@ -196,7 +160,7 @@ export function registerGenerateCommand(program: Command): void {
           keepProjectOnFailure: opts.keepProjectOnFailure,
         });
       } catch (e: any) {
-        handleGenerateError(e);
+        handleCommandError(e);
       }
     });
 }

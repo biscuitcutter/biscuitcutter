@@ -331,7 +331,6 @@ export async function promptForConfig(
   const prompts = context.biscuitcutter.__prompts__ || {};
   delete context.biscuitcutter.__prompts__;
 
-  // First pass: Handle simple and raw variables, plus choices
   let count = 0;
   const allPrompts = Object.entries(context.biscuitcutter);
   const visiblePrompts = allPrompts.filter(([k]) => !k.startsWith('_'));
@@ -347,9 +346,7 @@ export async function promptForConfig(
       continue;
     }
 
-    if (typeof raw !== 'object' || Array.isArray(raw)) {
-      count++;
-    }
+    count++;
     const prefix = `  [${count}/${size}] `;
 
     try {
@@ -364,39 +361,19 @@ export async function promptForConfig(
         } else {
           cookiecutterDict[key] = await readUserYesNo(key, raw, prompts, prefix);
         }
-      } else if (typeof raw !== 'object') {
+      } else if (typeof raw === 'object' && raw !== null) {
+        // Dictionary variable
+        let val = renderVariable(env, raw, cookiecutterDict);
+        if (!noInput) {
+          val = await readUserDict(key, val, prompts, prefix);
+        }
+        cookiecutterDict[key] = val;
+      } else {
         // Regular variable
         let val = renderVariable(env, raw, cookiecutterDict);
         if (!noInput) {
           val = await readUserVariable(key, val, prompts, prefix);
         }
-        cookiecutterDict[key] = val;
-      }
-    } catch (err: any) {
-      if (err.name === 'Template render error' || err.message?.includes('not defined')) {
-        const msg = `Unable to render variable '${key}'`;
-        throw new UndefinedVariableInTemplateError(msg, err, context);
-      }
-      throw err;
-    }
-  }
-
-  // Second pass: handle the dictionaries
-  for (const [key, raw] of Object.entries(context.biscuitcutter)) {
-    if (key.startsWith('_') && !key.startsWith('__')) {
-      continue;
-    }
-
-    try {
-      if (typeof raw === 'object' && !Array.isArray(raw) && raw !== null) {
-        count++;
-        const prefix = `  [${count}/${size}] `;
-        let val = renderVariable(env, raw, cookiecutterDict);
-
-        if (!noInput && !key.startsWith('__')) {
-          val = await readUserDict(key, val, prompts, prefix);
-        }
-
         cookiecutterDict[key] = val;
       }
     } catch (err: any) {

@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { configureLogger } from '../../utils/log';
 import { check } from '../../core/tracking';
-import { handleTrackingError, logSuccess, logWarning } from './helpers';
+import { handleCommandError, logSuccess, logWarning } from './helpers';
 
 export function registerCheckCommand(program: Command): void {
   program
@@ -30,7 +30,7 @@ export function registerCheckCommand(program: Command): void {
           process.exit(1);
         }
       } catch (e: any) {
-        handleTrackingError(e);
+        handleCommandError(e);
       }
     });
 }
