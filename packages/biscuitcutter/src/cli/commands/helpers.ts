@@ -2,6 +2,9 @@ import {
   BiscuitCutterError,
   UndefinedVariableInTemplateError,
 } from '../../utils/exceptions';
+import { getLogger } from '../../utils/log';
+
+const logger = getLogger('biscuitcutter.cli');
 
 export function logSuccess(message: string): void { console.log('\x1b[32m%s\x1b[0m', message); }
 export function logWarning(message: string): void { console.log('\x1b[33m%s\x1b[0m', message); }
@@ -11,7 +14,8 @@ export function handleCommandError(e: unknown): void {
   if (e instanceof UndefinedVariableInTemplateError) {
     console.error(e.message);
     console.error(`Error message: ${e.error.message}`);
-    console.error(`Context: ${JSON.stringify(e.context, null, 4)}`);
+    // Log full context only at debug level to avoid leaking sensitive values
+    logger.debug('Context: %s', JSON.stringify(e.context, null, 4));
     process.exit(1);
   } else if (e instanceof BiscuitCutterError) {
     console.error(e.message);
