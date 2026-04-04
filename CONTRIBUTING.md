@@ -49,12 +49,14 @@ If you are proposing a feature:
    git clone git@github.com:your_name_here/biscuitcutter.git
    ```
 
-3. Install dependencies:
+3. Install dependencies from the repository root:
 
    ```bash
    cd biscuitcutter
    npm install
    ```
+
+   This installs dependencies for all packages in the monorepo.
 
 4. Create a branch for local development:
 
@@ -86,6 +88,91 @@ If you are proposing a feature:
 
 8. Submit a pull request through GitHub.
 
+## Monorepo Structure
+
+This repository is organized as a monorepo using [npm workspaces](https://docs.npmjs.com/cli/using-npm/workspaces). Packages live under the `packages/` directory.
+
+### Packages
+
+| Package | Path | Description |
+|---------|------|-------------|
+| `biscuitcutter` | `packages/biscuitcutter` | The main CLI tool and core library |
+
+### Running Commands
+
+All commands should be run from the repository root. The root `package.json` delegates to workspace packages automatically:
+
+```bash
+# Build all packages
+npm run build
+
+# Test all packages
+npm run test
+
+# Lint all packages
+npm run lint
+```
+
+To run a command in a specific package:
+
+```bash
+npm run build --workspace=biscuitcutter
+npm run test --workspace=biscuitcutter
+```
+
+Or navigate into the package directory:
+
+```bash
+cd packages/biscuitcutter
+npm test
+```
+
+### Adding a New Package
+
+1. Create a new directory under `packages/`:
+
+   ```bash
+   mkdir packages/my-new-package
+   ```
+
+2. Add a `package.json` with at minimum `name`, `version`, and any scripts the root delegates (`build`, `test`, `lint`).
+
+3. Run `npm install` from the root to link the new package into the workspace.
+
+### Inter-package Dependencies
+
+To depend on another package in the monorepo, add it to your `package.json` dependencies using the workspace protocol:
+
+```json
+{
+  "dependencies": {
+    "biscuitcutter": "*"
+  }
+}
+```
+
+npm workspaces will resolve this to the local copy. Run `npm install` from the root after adding the dependency.
+
+### Changesets
+
+This project uses [Changesets](https://github.com/changesets/changesets) to manage versioning and changelogs. When your PR includes changes that affect published packages, add a changeset:
+
+```bash
+npx changeset add
+```
+
+Or create a file manually at `.changeset/<name>.md`:
+
+```markdown
+---
+"biscuitcutter": patch
+---
+
+One-line summary of the change
+```
+
+Use `patch` for bug fixes, `minor` for new features, and `major` for breaking changes. Skip the changeset for changes that don't affect published packages (e.g. CI config, README updates).
+
 ## Pull Request Guidelines
 
 Before you submit a pull request, check that it meets these guidelines:
@@ -96,6 +183,14 @@ Before you submit a pull request, check that it meets these guidelines:
 4. Make sure all tests pass.
 
 ## Development Scripts
+
+From the repository root:
+
+- `npm run build` - Build all packages
+- `npm test` - Run tests across all packages
+- `npm run lint` - Lint all packages
+
+From within a package directory (e.g. `packages/biscuitcutter`):
 
 - `npm run build` - Compile TypeScript to JavaScript
 - `npm run dev` - Watch mode for development
@@ -112,7 +207,7 @@ Before you submit a pull request, check that it meets these guidelines:
 
 ## Testing
 
-Tests are written using [Vitest](https://vitest.dev/). Place test files in the `tests/` directory with the naming convention `*.test.ts`.
+Tests are written using [Vitest](https://vitest.dev/). Place test files in the `tests/` directory within each package, with the naming convention `*.test.ts`.
 
 ```bash
 # Run all tests
@@ -126,15 +221,20 @@ npm run test:watch
 
 ```
 biscuitcutter/
-├── src/
-│   ├── cli/          # Command-line interface
-│   ├── config/       # Configuration handling
-│   ├── core/         # Core business logic
-│   ├── repository/   # Repository handling (git, zip, etc.)
-│   ├── template/     # Template engine
-│   └── utils/        # Utility functions
-├── tests/            # Test files
-└── dist/             # Compiled output (generated)
+├── .changeset/                # Changeset config and pending changesets
+├── .github/workflows/         # CI/CD workflows
+├── packages/
+│   └── biscuitcutter/         # Main package
+│       ├── src/
+│       │   ├── cli/           # Command-line interface
+│       │   ├── config/        # Configuration handling
+│       │   ├── core/          # Core business logic
+│       │   ├── repository/    # Repository handling (git, zip, etc.)
+│       │   ├── templating/    # Template engine
+│       │   └── utils/         # Utility functions
+│       ├── tests/             # Test files
+│       └── dist/              # Compiled output (generated)
+└── package.json               # Root workspace config
 ```
 
 ## Questions?

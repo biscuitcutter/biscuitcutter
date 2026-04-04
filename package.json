@@ -1,72 +1,21 @@
 {
-  "name": "biscuitcutter",
-  "version": "0.0.8",
-  "description": "A command-line utility that creates projects from project templates, e.g. creating a TypeScript package project from a project template.",
-  "main": "dist/src/index.js",
-  "types": "dist/src/index.d.ts",
-  "bin": {
-    "biscuitcutter": "dist/src/cli/cli.js"
-  },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
+  "name": "biscuitcutter-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*"
   ],
   "scripts": {
-    "build": "tsc && rm -rf dist/tests",
-    "start": "node dist/src/cli/cli.js",
-    "dev": "tsc --watch",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "lint": "eslint src tests --ext .ts",
-    "lint:fix": "eslint src tests --ext .ts --fix",
-    "prepublishOnly": "npm run build && npm test",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "link": "npm link --workspace=biscuitcutter",
+    "unlink": "npm unlink --global biscuitcutter",
     "changeset": "npx @changesets/cli"
   },
-  "keywords": [
-    "biscuitcutter",
-    "cookiecutter",
-    "template",
-    "scaffolding",
-    "project-template",
-    "generator",
-    "boilerplate",
-    "nunjucks"
-  ],
-  "author": "",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/biscuitcutter/biscuitcutter.git"
-  },
-  "homepage": "https://github.com/biscuitcutter/biscuitcutter#readme",
-  "bugs": {
-    "url": "https://github.com/biscuitcutter/biscuitcutter/issues"
+  "devDependencies": {
+    "@changesets/cli": "^2.30.0"
   },
   "engines": {
     "node": ">=18.0.0"
-  },
-  "dependencies": {
-    "chalk": "^5.6.2",
-    "commander": "^14.0.3",
-    "fs-extra": "^11.3.4",
-    "inquirer": "^12.11.1",
-    "istextorbinary": "^9.5.0",
-    "nunjucks": "^3.2.4",
-    "slugify": "^1.6.6",
-    "yaml": "^2.8.2"
-  },
-  "devDependencies": {
-    "@changesets/cli": "^2.30.0",
-    "@types/fs-extra": "^11.0.4",
-    "@types/node": "^25.3.5",
-    "@types/nunjucks": "^3.2.6",
-    "@typescript-eslint/eslint-plugin": "^7.18.0",
-    "@typescript-eslint/parser": "^7.18.0",
-    "eslint": "^8.57.1",
-    "eslint-config-airbnb-typescript": "^18.0.0",
-    "eslint-plugin-import": "^2.32.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
   }
 }
