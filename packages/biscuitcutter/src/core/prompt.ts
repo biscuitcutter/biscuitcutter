@@ -335,7 +335,9 @@ export async function promptForConfig(
   const allPrompts = Object.entries(context.biscuitcutter);
   const visiblePrompts = allPrompts.filter(([k]) => !k.startsWith('_'));
   const size = visiblePrompts.length;
+  const deferredDicts: [string, Record<string, any>][] = [];
 
+  // First pass: handle scalars, booleans, choices; defer dictionaries
   for (const [key, raw] of allPrompts) {
     if (key.startsWith('_') && !key.startsWith('__')) {
       cookiecutterDict[key] = raw;
@@ -343,6 +345,11 @@ export async function promptForConfig(
     }
     if (key.startsWith('__')) {
       cookiecutterDict[key] = renderVariable(env, raw, cookiecutterDict);
+      continue;
+    }
+
+    if (typeof raw === 'object' && !Array.isArray(raw) && raw !== null) {
+      deferredDicts.push([key, raw]);
       continue;
     }
 
@@ -361,13 +368,6 @@ export async function promptForConfig(
         } else {
           cookiecutterDict[key] = await readUserYesNo(key, raw, prompts, prefix);
         }
-      } else if (typeof raw === 'object' && raw !== null) {
-        // Dictionary variable
-        let val = renderVariable(env, raw, cookiecutterDict);
-        if (!noInput) {
-          val = await readUserDict(key, val, prompts, prefix);
-        }
-        cookiecutterDict[key] = val;
       } else {
         // Regular variable
         let val = renderVariable(env, raw, cookiecutterDict);
@@ -376,6 +376,26 @@ export async function promptForConfig(
         }
         cookiecutterDict[key] = val;
       }
+    } catch (err: any) {
+      if (err.name === 'Template render error' || err.message?.includes('not defined')) {
+        const msg = `Unable to render variable '${key}'`;
+        throw new UndefinedVariableInTemplateError(msg, err, context);
+      }
+      throw err;
+    }
+  }
+
+  // Second pass: dictionaries (rendered after all scalar values are populated)
+  for (const [key, raw] of deferredDicts) {
+    count++;
+    const prefix = `  [${count}/${size}] `;
+
+    try {
+      let val = renderVariable(env, raw, cookiecutterDict);
+      if (!noInput) {
+        val = await readUserDict(key, val, prompts, prefix);
+      }
+      cookiecutterDict[key] = val;
     } catch (err: any) {
       if (err.name === 'Template render error' || err.message?.includes('not defined')) {
         const msg = `Unable to render variable '${key}'`;
