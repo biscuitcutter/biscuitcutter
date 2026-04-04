@@ -1,5 +1,11 @@
 # biscuitcutter
 
+## 0.0.9
+
+### Patch Changes
+
+- 690aca3: Convert repository to monorepo structure using npm workspaces
+
 ## 0.0.8
 
 ### Patch Changes

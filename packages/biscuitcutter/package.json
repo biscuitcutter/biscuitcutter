@@ -1,6 +1,6 @@
 {
   "name": "biscuitcutter",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "A command-line utility that creates projects from project templates, e.g. creating a TypeScript package project from a project template.",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
