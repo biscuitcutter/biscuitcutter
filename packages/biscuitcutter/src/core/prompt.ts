@@ -448,6 +448,132 @@ export async function chooseNestedTemplate(
 }
 
 /**
+ * Prompt user using adapter-normalized TemplateVariable definitions.
+ * Supports rich variable types: when conditions, help text, choices with labels,
+ * secret input, and multiline editing.
+ */
+export async function promptForConfigWithAdapter(
+  variables: import('./adapters/types').TemplateVariable[],
+  context: Record<string, any>,
+  env: nunjucks.Environment,
+  noInput: boolean = false,
+): Promise<Record<string, any>> {
+  const result: Record<string, any> = {};
+  const visibleVars = variables.filter((v) => !v.name.startsWith('_'));
+  const size = visibleVars.length;
+  let count = 0;
+
+  for (const variable of variables) {
+    // Skip internal variables — just apply defaults
+    if (variable.name.startsWith('_')) {
+      result[variable.name] = variable.default;
+      continue;
+    }
+
+    // Evaluate 'when' condition if present
+    if (variable.when) {
+      try {
+        const rendered = env.renderString(`{{ ${variable.when} }}`, result);
+        const isFalsy = !rendered || rendered === 'false' || rendered === 'False' || rendered === '0' || rendered === 'undefined' || rendered === 'null' || rendered === 'none' || rendered === 'None';
+        if (isFalsy) {
+          result[variable.name] = variable.default;
+          continue;
+        }
+      } catch {
+        // If the when condition can't be evaluated, show the prompt
+      }
+    }
+
+    count++;
+    const prefix = `  [${count}/${size}] `;
+
+    // Render default value through template engine
+    let defaultValue = variable.default;
+    if (typeof defaultValue === 'string') {
+      try {
+        defaultValue = env.renderString(defaultValue, result);
+      } catch {
+        // Use raw default if rendering fails
+      }
+    }
+
+    // Build help suffix
+    const helpSuffix = variable.help ? ` (${variable.help})` : '';
+
+    if (noInput) {
+      result[variable.name] = defaultValue;
+      continue;
+    }
+
+    // Handle different variable types
+    if (variable.type === 'choice' && variable.choices) {
+      const labels = variable.choices.map((c) => c.label || String(c.value));
+      const values = variable.choices.map((c) => c.value);
+      if (helpSuffix) console.log(`${prefix}${helpSuffix.trim()}`);
+      const selected = await readUserChoice(variable.name, labels);
+      const idx = labels.indexOf(selected);
+      result[variable.name] = idx >= 0 ? values[idx] : selected;
+    } else if (variable.type === 'multichoice' && variable.choices) {
+      // For multichoice, show options and let user enter comma-separated indices
+      const labels = variable.choices.map((c) => c.label || String(c.value));
+      const values = variable.choices.map((c) => c.value);
+      if (helpSuffix) console.log(`${prefix}${helpSuffix.trim()}`);
+      console.log(`${prefix}Select one or more for ${variable.name} (comma-separated):`);
+      labels.forEach((label, i) => console.log(`    ${i + 1} - ${label}`));
+      const answer = await readUserVariable(variable.name, '', undefined, prefix);
+      if (!answer) {
+        result[variable.name] = defaultValue || [];
+      } else {
+        const indices = String(answer).split(',').map((s) => parseInt(s.trim(), 10) - 1);
+        result[variable.name] = indices
+          .filter((i) => i >= 0 && i < values.length)
+          .map((i) => values[i]);
+      }
+    } else if (variable.type === 'bool') {
+      result[variable.name] = await readUserYesNo(
+        variable.name + helpSuffix,
+        defaultValue ?? false,
+        undefined,
+        prefix,
+      );
+    } else if (variable.type === 'int') {
+      const val = await readUserVariable(variable.name + helpSuffix, defaultValue, undefined, prefix);
+      result[variable.name] = parseInt(String(val), 10);
+    } else if (variable.type === 'float') {
+      const val = await readUserVariable(variable.name + helpSuffix, defaultValue, undefined, prefix);
+      result[variable.name] = parseFloat(String(val));
+    } else if (variable.type === 'dict') {
+      result[variable.name] = await readUserDict(
+        variable.name + helpSuffix,
+        defaultValue || {},
+        undefined,
+        prefix,
+      );
+    } else if (variable.type === 'json') {
+      const val = await readUserVariable(variable.name + helpSuffix, defaultValue ? JSON.stringify(defaultValue) : '', undefined, prefix);
+      try {
+        result[variable.name] = JSON.parse(String(val));
+      } catch {
+        result[variable.name] = val;
+      }
+    } else if (variable.type === 'yaml') {
+      const val = await readUserVariable(variable.name + helpSuffix, defaultValue ? String(defaultValue) : '', undefined, prefix);
+      result[variable.name] = val;
+    } else {
+      // str (default)
+      result[variable.name] = await readUserVariable(
+        variable.name + helpSuffix,
+        defaultValue,
+        undefined,
+        prefix,
+      );
+    }
+  }
+
+  return result;
+}
+
+/**
  * Ask user if it's okay to delete the previously-downloaded file/directory.
  * If yes, delete it. If no, checks to see if the old version should be reused.
  */

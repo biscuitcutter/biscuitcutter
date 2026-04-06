@@ -9,15 +9,16 @@ import * as path from 'path';
 import { getLogger } from '../utils/log';
 import { getUserConfig } from '../config/config';
 import { InvalidModeError } from '../utils/exceptions';
-import { generateContext, generateFiles } from './generate';
-import { runPrePromptHook } from './hooks';
-import { chooseNestedTemplate, promptForConfig } from './prompt';
+import { generateContext, generateFiles, generateFilesWithAdapter } from './generate';
+import { runPrePromptHook, runCopierTasks } from './hooks';
+import { chooseNestedTemplate, promptForConfig, promptForConfigWithAdapter } from './prompt';
 import { dump, load } from './replay';
 import { determineRepoDir } from '../repository/repository';
 import { rmtree } from '../utils/utils';
 import { writeTemplateState, TemplateState } from './tracking';
 import { getLatestCommit, isGitRepo } from '../utils/git';
 import { filterPublicContext, findContextFile } from './template-helpers';
+import { detectTemplateType, createAdapter } from './adapters/detect';
 
 const logger = getLogger('biscuitcutter.main');
 
@@ -101,6 +102,24 @@ export async function biscuitcutter(options: BiscuitCutterOptions): Promise<stri
   cleanup = repoDir !== baseRepoDir;
 
   const templateName = path.basename(path.resolve(repoDir));
+
+  // Detect template type and use adapter pipeline
+  const templateType = detectTemplateType(repoDir);
+  logger.debug('Detected template type: %s', templateType);
+
+  if (templateType === 'copier') {
+    return biscuitcutterCopier(
+      repoDir,
+      baseRepoDir,
+      templateName,
+      options,
+      configDict,
+      cleanup,
+      cleanupBaseRepoDir,
+    );
+  }
+
+  // --- Cookiecutter / BiscuitCutter pipeline (existing behavior) ---
 
   let contextFromReplayFile: Record<string, any> | undefined;
   if (replay) {
@@ -208,6 +227,111 @@ export async function biscuitcutter(options: BiscuitCutterOptions): Promise<stri
   }
 
   // Cleanup (if required)
+  if (cleanup) {
+    rmtree(repoDir);
+  }
+  if (cleanupBaseRepoDir) {
+    rmtree(baseRepoDir);
+  }
+
+  return result;
+}
+
+/**
+ * Copier-specific pipeline using the adapter system.
+ */
+async function biscuitcutterCopier(
+  repoDir: string,
+  baseRepoDir: string,
+  templateName: string,
+  options: BiscuitCutterOptions,
+  configDict: any,
+  cleanup: boolean,
+  cleanupBaseRepoDir: boolean,
+): Promise<string> {
+  const {
+    template,
+    checkout = null,
+    noInput = false,
+    extraContext = null,
+    overwriteIfExists = false,
+    outputDir = '.',
+    skipIfFileExists = false,
+    acceptHooks = true,
+    keepProjectOnFailure = false,
+    directory = null,
+  } = options;
+
+  const adapter = createAdapter('copier');
+  const config = adapter.loadConfig(repoDir);
+
+  logger.debug('Copier config loaded: %d variables, suffix=%s',
+    config.variables.length, config.templatesSuffix);
+
+  // Prompt for variables using the adapter-aware prompting
+  const env = adapter.createEnvironment(config, {}, [repoDir]);
+  let userVariables = await promptForConfigWithAdapter(
+    config.variables,
+    {},
+    env,
+    noInput,
+  );
+
+  // Apply extra context overrides
+  if (extraContext) {
+    Object.assign(userVariables, extraContext);
+  }
+
+  // Build the template context
+  const context = adapter.buildContext(userVariables, {
+    src_path: template,
+    dst_path: path.resolve(outputDir),
+  });
+
+  logger.debug('Copier context: %s', JSON.stringify(context));
+
+  // Determine the output directory name
+  // For Copier, we typically use the project_slug or project_name variable
+  const outputDirName = userVariables.project_slug
+    || userVariables.project_name
+    || templateName;
+
+  // Generate files using adapter pipeline
+  const result = generateFilesWithAdapter(
+    repoDir,
+    adapter,
+    config,
+    context,
+    outputDir,
+    overwriteIfExists,
+    skipIfFileExists,
+    acceptHooks,
+    keepProjectOnFailure,
+    outputDirName,
+  );
+
+  // Run Copier tasks
+  if (acceptHooks && config.tasks.length > 0) {
+    runCopierTasks(config.tasks, result, context);
+  }
+
+  // Write state files
+  try {
+    const commit = isGitRepo(baseRepoDir) ? getLatestCommit(baseRepoDir) : null;
+    adapter.writeStateFile(
+      result,
+      template,
+      commit || 'unknown',
+      checkout,
+      context,
+      directory,
+    );
+    logger.debug('Wrote Copier state files to %s', result);
+  } catch (e) {
+    logger.debug('Could not write template state files: %s', e);
+  }
+
+  // Cleanup
   if (cleanup) {
     rmtree(repoDir);
   }

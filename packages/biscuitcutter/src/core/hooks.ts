@@ -15,6 +15,7 @@ import {
   rmtree,
   workIn,
 } from '../utils/utils';
+import type { TemplateTask } from './adapters/types';
 
 const logger = getLogger('biscuitcutter.hooks');
 
@@ -218,4 +219,77 @@ export function runPrePromptHook(repoDir: string): string {
   });
 
   return tmpRepoDir;
+}
+
+/**
+ * Run Copier-style tasks after project generation.
+ * Tasks are shell commands defined in the _tasks config.
+ */
+export function runCopierTasks(
+  tasks: TemplateTask[],
+  projectDir: string,
+  context: Record<string, any>,
+): void {
+  if (!tasks || tasks.length === 0) return;
+
+  const env = createEnvWithContext(context);
+
+  for (const task of tasks) {
+    // Evaluate 'when' condition if present
+    if (task.when) {
+      try {
+        const rendered = env.renderString(`{{ ${task.when} }}`, context);
+        const isFalsy = !rendered || rendered === 'false' || rendered === 'False' || rendered === '0' || rendered === 'undefined' || rendered === 'null' || rendered === 'none' || rendered === 'None';
+        if (isFalsy) {
+          logger.debug('Skipping task (when condition false): %s', JSON.stringify(task.command));
+          continue;
+        }
+      } catch {
+        // If the condition can't be evaluated, run the task
+      }
+    }
+
+    const cwd = task.workingDirectory
+      ? path.resolve(projectDir, task.workingDirectory)
+      : projectDir;
+
+    let command: string;
+    if (Array.isArray(task.command)) {
+      command = task.command.join(' ');
+    } else {
+      command = task.command;
+    }
+
+    // Render the command through the template engine
+    try {
+      command = env.renderString(command, context);
+    } catch {
+      // Use raw command if rendering fails
+    }
+
+    logger.debug('Running Copier task: %s (cwd: %s)', command, cwd);
+
+    try {
+      const result = spawnSync(command, {
+        cwd,
+        stdio: 'inherit',
+        shell: true,
+        env: {
+          ...process.env,
+          STAGE: 'task',
+        },
+      });
+      if (result.error) {
+        throw result.error;
+      }
+      if (result.status !== EXIT_SUCCESS) {
+        throw new FailedHookError(
+          `Copier task failed (exit status: ${result.status}): ${command}`,
+        );
+      }
+    } catch (err: any) {
+      if (err instanceof FailedHookError) throw err;
+      throw new FailedHookError(`Copier task failed: ${command} (${err.message})`);
+    }
+  }
 }

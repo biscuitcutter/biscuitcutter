@@ -55,13 +55,24 @@ export function expandAbbreviations(
 }
 
 /**
- * Determine if `repoDirectory` contains a `biscuitcutter.json` or `cookiecutter.json` file.
+ * Determine if `repoDirectory` contains a supported template config file.
+ * Checks for copier.yml/copier.yaml, biscuitcutter.json, or cookiecutter.json.
+ */
+export function repositoryHasTemplateConfig(repoDirectory: string): boolean {
+  const dirExists = fs.existsSync(repoDirectory) && fs.statSync(repoDirectory).isDirectory();
+  if (!dirExists) return false;
+
+  return fs.existsSync(path.join(repoDirectory, 'copier.yml'))
+    || fs.existsSync(path.join(repoDirectory, 'copier.yaml'))
+    || fs.existsSync(path.join(repoDirectory, 'biscuitcutter.json'))
+    || fs.existsSync(path.join(repoDirectory, 'cookiecutter.json'));
+}
+
+/**
+ * @deprecated Use repositoryHasTemplateConfig instead.
  */
 export function repositoryHasCookiecutterJson(repoDirectory: string): boolean {
-  const dirExists = fs.existsSync(repoDirectory) && fs.statSync(repoDirectory).isDirectory();
-  const configExists = fs.existsSync(path.join(repoDirectory, 'biscuitcutter.json'))
-                       || fs.existsSync(path.join(repoDirectory, 'cookiecutter.json'));
-  return dirExists && configExists;
+  return repositoryHasTemplateConfig(repoDirectory);
 }
 
 /**
@@ -117,13 +128,14 @@ export async function determineRepoDir(
   }
 
   for (const repoCandidate of repositoryCandidates) {
-    if (repositoryHasCookiecutterJson(repoCandidate)) {
+    if (repositoryHasTemplateConfig(repoCandidate)) {
       return [repoCandidate, cleanup];
     }
   }
 
   throw new RepositoryNotFoundError(
     `A valid repository for "${expandedTemplate}" could not be found in the following `
-      + `locations:\n${repositoryCandidates.join('\n')}`,
+      + `locations:\n${repositoryCandidates.join('\n')}\n`
+      + 'Expected one of: copier.yml, copier.yaml, biscuitcutter.json, or cookiecutter.json',
   );
 }

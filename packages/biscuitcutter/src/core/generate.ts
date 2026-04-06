@@ -24,6 +24,7 @@ import {
   rmtree,
   workIn,
 } from '../utils/utils';
+import type { TemplateAdapter, TemplateConfig } from './adapters/types';
 
 const logger = getLogger('biscuitcutter.generate');
 
@@ -541,6 +542,249 @@ export function generateFiles(
       'post_gen_project',
       projectDir,
       effectiveContext,
+      deleteProjectOnFailure,
+    );
+  }
+
+  return projectDir;
+}
+
+/**
+ * Generate a file using adapter-aware logic.
+ * Handles suffix-based rendering (Copier) and copy-only paths.
+ */
+function generateFileWithAdapter(
+  projectDir: string,
+  infile: string,
+  context: Record<string, any>,
+  env: nunjucks.Environment,
+  adapter: TemplateAdapter,
+  config: TemplateConfig,
+  skipIfFileExists: boolean = false,
+): void {
+  logger.debug('Processing file %s (adapter: %s)', infile, adapter.type);
+
+  // Determine output file name (e.g., strip .jinja suffix for Copier)
+  const outputName = adapter.getOutputFileName(infile, config);
+
+  // Render the output path through the template engine
+  const outfileRendered = env.renderString(outputName, context);
+  const outfile = path.join(projectDir, outfileRendered);
+
+  validatePathWithinBoundary(outfile, projectDir);
+
+  if (fs.existsSync(outfile) && fs.statSync(outfile).isDirectory()) {
+    return;
+  }
+
+  if (skipIfFileExists && fs.existsSync(outfile)) {
+    logger.debug('The resulting file already exists: %s', outfile);
+    return;
+  }
+
+  makeSurePathExists(path.dirname(outfile));
+
+  // Check if file is binary — just copy
+  if (isBinaryFile(infile)) {
+    logger.debug('Copying binary %s to %s without rendering', infile, outfile);
+    fs.copyFileSync(infile, outfile);
+    return;
+  }
+
+  // Decide whether to render or copy based on adapter
+  if (!adapter.shouldRenderFile(infile, config)) {
+    logger.debug('Copying %s to %s without rendering (adapter decision)', infile, outfile);
+    fs.copyFileSync(infile, outfile);
+    // Copy permissions
+    try {
+      const stat = fs.statSync(infile);
+      fs.chmodSync(outfile, stat.mode);
+    } catch { /* ignore */ }
+    return;
+  }
+
+  // Render the file
+  const infileContent = fs.readFileSync(infile, 'utf-8');
+  const rendered = env.renderString(infileContent, context);
+
+  // Detect and normalize line endings
+  let newline = '\n';
+  if (infileContent.includes('\r\n')) {
+    newline = '\r\n';
+  } else if (infileContent.includes('\r')) {
+    newline = '\r';
+  }
+
+  if (context.biscuitcutter?._new_lines || context._new_lines) {
+    newline = context.biscuitcutter?._new_lines || context._new_lines;
+  }
+
+  const normalized = rendered.replace(/\r\n|\r|\n/g, newline);
+  fs.writeFileSync(outfile, normalized, 'utf-8');
+
+  try {
+    const stat = fs.statSync(infile);
+    fs.chmodSync(outfile, stat.mode);
+  } catch { /* ignore */ }
+}
+
+/**
+ * Generate project files using the adapter pipeline.
+ * This is the adapter-aware counterpart to generateFiles().
+ */
+export function generateFilesWithAdapter(
+  repoDir: string,
+  adapter: TemplateAdapter,
+  config: TemplateConfig,
+  context: Record<string, any>,
+  outputDir: string = '.',
+  overwriteIfExists: boolean = false,
+  skipIfFileExists: boolean = false,
+  acceptHooks: boolean = true,
+  keepProjectOnFailure: boolean = false,
+  outputDirName?: string,
+): string {
+  const templateDir = adapter.getTemplateDir(repoDir, config);
+  logger.debug('Generating project from %s (adapter: %s)...', templateDir, adapter.type);
+
+  const env = adapter.createEnvironment(config, context, [templateDir, path.join(repoDir, 'templates')]);
+
+  // Determine the output directory name
+  const unrenderedDir = outputDirName || path.basename(templateDir);
+  const resolvedOutputDir = path.resolve(outputDir);
+
+  let projectDir: string;
+  let outputDirectoryCreated: boolean;
+
+  try {
+    const renderedDirName = adapter.renderOutputDirName(unrenderedDir, context, env);
+    [projectDir, outputDirectoryCreated] = renderAndCreateDir(
+      renderedDirName,
+      context,
+      resolvedOutputDir,
+      env,
+      overwriteIfExists,
+    );
+  } catch (err: any) {
+    if (isUndefinedVariableError(err)) {
+      throw new UndefinedVariableInTemplateError(
+        `Unable to create project directory '${unrenderedDir}'`,
+        err,
+        context,
+      );
+    }
+    throw err;
+  }
+
+  projectDir = path.resolve(projectDir);
+  logger.debug('Project directory is %s', projectDir);
+
+  const deleteProjectOnFailure = outputDirectoryCreated && !keepProjectOnFailure;
+
+  // Run pre-generation hooks (for Cookiecutter/BiscuitCutter)
+  if (acceptHooks && adapter.type !== 'copier') {
+    runHookFromRepoDir(
+      repoDir,
+      'pre_gen_project',
+      projectDir,
+      context,
+      deleteProjectOnFailure,
+    );
+  }
+
+  // Get exclude patterns
+  const excludePatterns = adapter.getExcludePatterns(config);
+
+  workIn(templateDir, () => {
+    for (const [root, dirs, files] of walkSync('.')) {
+      // Filter excluded directories
+      const filteredDirs: string[] = [];
+      for (const d of [...dirs].sort()) {
+        const relPath = path.normalize(path.join(root, d));
+        const isExcluded = excludePatterns.some((p) => minimatch(relPath, p) || minimatch(d, p));
+        if (!isExcluded) {
+          filteredDirs.push(d);
+        }
+      }
+      dirs.length = 0;
+      dirs.push(...filteredDirs);
+
+      // Create subdirectories (render directory names through template engine)
+      for (const d of dirs) {
+        const unrenderedSubdir = path.join(projectDir, root, d);
+        try {
+          renderAndCreateDir(
+            unrenderedSubdir,
+            context,
+            resolvedOutputDir,
+            env,
+            overwriteIfExists,
+          );
+        } catch (err: any) {
+          if (isUndefinedVariableError(err)) {
+            if (deleteProjectOnFailure) rmtree(projectDir);
+            const relDir = path.relative(resolvedOutputDir, unrenderedSubdir);
+            throw new UndefinedVariableInTemplateError(
+              `Unable to create directory '${relDir}'`,
+              err,
+              context,
+            );
+          }
+          throw err;
+        }
+      }
+
+      // Process files
+      for (const f of [...files].sort()) {
+        const infile = path.normalize(path.join(root, f));
+
+        // Check adapter-level exclusion
+        if ('isExcluded' in adapter && typeof (adapter as any).isExcluded === 'function') {
+          if ((adapter as any).isExcluded(infile, config)) {
+            logger.debug('Skipping excluded file %s', infile);
+            continue;
+          }
+        }
+
+        // Check simple pattern exclusion
+        const isExcluded = excludePatterns.some((p) => minimatch(infile, p) || minimatch(f, p));
+        if (isExcluded) {
+          logger.debug('Skipping excluded file %s', infile);
+          continue;
+        }
+
+        try {
+          generateFileWithAdapter(
+            projectDir,
+            infile,
+            context,
+            env,
+            adapter,
+            config,
+            skipIfFileExists,
+          );
+        } catch (err: any) {
+          if (isUndefinedVariableError(err)) {
+            if (deleteProjectOnFailure) rmtree(projectDir);
+            throw new UndefinedVariableInTemplateError(
+              `Unable to create file '${infile}'`,
+              err,
+              context,
+            );
+          }
+          throw err;
+        }
+      }
+    }
+  });
+
+  // Run post-generation hooks (for Cookiecutter/BiscuitCutter)
+  if (acceptHooks && adapter.type !== 'copier') {
+    runHookFromRepoDir(
+      repoDir,
+      'post_gen_project',
+      projectDir,
+      context,
       deleteProjectOnFailure,
     );
   }

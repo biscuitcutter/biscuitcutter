@@ -13,9 +13,17 @@ export function filterPublicContext(context: Record<string, any>): Record<string
 
 /**
  * Find the context file in a template directory.
- * Checks for biscuitcutter.json first, then falls back to cookiecutter.json.
+ * Checks for copier.yml/copier.yaml first, then biscuitcutter.json, then cookiecutter.json.
  */
 export function findContextFile(dir: string): string {
+  const copierYml = path.join(dir, 'copier.yml');
+  if (fs.existsSync(copierYml)) {
+    return copierYml;
+  }
+  const copierYaml = path.join(dir, 'copier.yaml');
+  if (fs.existsSync(copierYaml)) {
+    return copierYaml;
+  }
   const biscuitcutterJson = path.join(dir, 'biscuitcutter.json');
   if (fs.existsSync(biscuitcutterJson)) {
     return biscuitcutterJson;
