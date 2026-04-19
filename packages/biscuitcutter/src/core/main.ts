@@ -148,6 +148,17 @@ export async function biscuitcutter(options: BiscuitCutterOptions): Promise<stri
     }
   }
 
+  // Apply extraContext to variable defaults before prompting so cross-variable
+  // template expressions (e.g. project_slug derived from project_name) resolve
+  // against the override values rather than the template defaults.
+  if (extraContext) {
+    for (const variable of variablesToPrompt) {
+      if (variable.name in extraContext) {
+        variable.default = extraContext[variable.name];
+      }
+    }
+  }
+
   // Prompt for variables
   const env = adapter.createEnvironment(config, {}, [repoDir]);
   const promptedVariables = await promptForConfigWithAdapter(
@@ -159,6 +170,7 @@ export async function biscuitcutter(options: BiscuitCutterOptions): Promise<stri
 
   const userVariables = { ...savedVariables, ...promptedVariables };
 
+  // Merge any remaining extraContext keys not covered by variable prompting
   if (extraContext) {
     Object.assign(userVariables, extraContext);
   }

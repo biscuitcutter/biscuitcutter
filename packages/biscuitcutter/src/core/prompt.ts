@@ -491,7 +491,7 @@ export async function promptForConfigWithAdapter(
     let defaultValue = variable.default;
     if (typeof defaultValue === 'string') {
       try {
-        defaultValue = env.renderString(defaultValue, result);
+        defaultValue = env.renderString(defaultValue, { ...result, cookiecutter: result, biscuitcutter: result });
       } catch {
         // Use raw default if rendering fails
       }
