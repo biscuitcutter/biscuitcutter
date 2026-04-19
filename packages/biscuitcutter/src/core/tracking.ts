@@ -8,6 +8,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as fsExtra from 'fs-extra';
+import * as YAML from 'yaml';
 import { spawnSync } from 'child_process';
 import { getLogger } from '../utils/log';
 import { getUserConfig } from '../config/config';
@@ -154,11 +155,46 @@ export function getStateFile(projectDir: string, mustExist: boolean = true): str
 
 /**
  * Read and parse the template state from a project directory.
+ * Checks for .biscuitcutter.json first, then falls back to .copier-answers.yml.
  */
 export function readTemplateState(projectDir: string): TemplateState {
-  const stateFile = getStateFile(projectDir);
-  const content = fs.readFileSync(stateFile, 'utf-8');
-  return JSON.parse(content) as TemplateState;
+  const biscuitcutterState = path.join(projectDir, STATE_FILE);
+  if (fs.existsSync(biscuitcutterState)) {
+    const content = fs.readFileSync(biscuitcutterState, 'utf-8');
+    return JSON.parse(content) as TemplateState;
+  }
+
+  // Try Copier answers file
+  const copierAnswers = path.join(projectDir, '.copier-answers.yml');
+  if (fs.existsSync(copierAnswers)) {
+    return readCopierAnswersAsState(copierAnswers); // eslint-disable-line @typescript-eslint/no-use-before-define
+  }
+
+  // Neither found — throw the standard error
+  throw new TemplateStateNotFoundError(path.resolve(projectDir));
+}
+
+/**
+ * Parse a .copier-answers.yml file into a TemplateState.
+ */
+function readCopierAnswersAsState(answersFile: string): TemplateState {
+  const content = fs.readFileSync(answersFile, 'utf-8');
+  const answers = YAML.parse(content) || {};
+
+  const context: Record<string, any> = {};
+  for (const [key, value] of Object.entries(answers)) {
+    if (!key.startsWith('_')) {
+      context[key] = value;
+    }
+  }
+
+  return {
+    template: answers._src_path || '',
+    commit: answers._commit || 'unknown',
+    checkout: answers._checkout || null,
+    context,
+    directory: answers._subdirectory || null,
+  };
 }
 
 /**
@@ -246,6 +282,11 @@ function resolveTemplateUrl(templateUrl: string): string {
 }
 
 function validateCookiecutterTemplate(templateDir: string): void {
+  // Check for Copier config files
+  if (fs.existsSync(path.join(templateDir, 'copier.yml')) || fs.existsSync(path.join(templateDir, 'copier.yaml'))) {
+    return; // Valid Copier template
+  }
+
   const entries = fs.readdirSync(templateDir);
   const hasTemplate = entries.some((entry) => {
     const fullPath = path.join(templateDir, entry);

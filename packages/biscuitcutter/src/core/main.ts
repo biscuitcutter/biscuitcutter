@@ -9,15 +9,14 @@ import * as path from 'path';
 import { getLogger } from '../utils/log';
 import { getUserConfig } from '../config/config';
 import { InvalidModeError } from '../utils/exceptions';
-import { generateContext, generateFiles } from './generate';
-import { runPrePromptHook } from './hooks';
-import { chooseNestedTemplate, promptForConfig } from './prompt';
+import { generateFilesWithAdapter } from './generate';
+import { runPrePromptHook, runCopierTasks } from './hooks';
+import { chooseNestedTemplate, promptForConfigWithAdapter } from './prompt';
 import { dump, load } from './replay';
 import { determineRepoDir } from '../repository/repository';
 import { rmtree } from '../utils/utils';
-import { writeTemplateState, TemplateState } from './tracking';
 import { getLatestCommit, isGitRepo } from '../utils/git';
-import { filterPublicContext, findContextFile } from './template-helpers';
+import { detectTemplateType, createAdapter } from './adapters/detect';
 
 const logger = getLogger('biscuitcutter.main');
 
@@ -94,7 +93,6 @@ export async function biscuitcutter(options: BiscuitCutterOptions): Promise<stri
   let repoDir: string = baseRepoDir;
   let cleanup = cleanupBaseRepoDir;
 
-  // Run pre_prompt hook
   if (acceptHooks) {
     repoDir = runPrePromptHook(baseRepoDir);
   }
@@ -102,112 +100,139 @@ export async function biscuitcutter(options: BiscuitCutterOptions): Promise<stri
 
   const templateName = path.basename(path.resolve(repoDir));
 
-  let contextFromReplayFile: Record<string, any> | undefined;
-  if (replay) {
-    if (typeof replay === 'boolean') {
-      contextFromReplayFile = load(configDict.replay_dir, templateName);
-    } else {
-      const parsed = path.parse(replay);
-      contextFromReplayFile = load(parsed.dir, parsed.name);
-    }
-  }
+  const templateType = detectTemplateType(repoDir);
+  logger.debug('Detected template type: %s', templateType);
 
-  const contextFile = findContextFile(repoDir);
-  logger.debug('context_file is %s', contextFile);
+  const adapter = createAdapter(templateType);
+  const config = adapter.loadConfig(repoDir);
 
-  let context: Record<string, any>;
-  let contextForPrompting: Record<string, any>;
-
-  if (replay && contextFromReplayFile) {
-    context = generateContext(
-      contextFile,
-      configDict.default_context,
-      null,
-    );
-    logger.debug('replayfile context: %s', JSON.stringify(contextFromReplayFile));
-    const itemsForPrompting: Record<string, any> = {};
-    for (const [k, v] of Object.entries(context.biscuitcutter)) {
-      if (!(k in contextFromReplayFile.biscuitcutter)) {
-        itemsForPrompting[k] = v;
-      }
-    }
-    contextForPrompting = { biscuitcutter: itemsForPrompting };
-    context = contextFromReplayFile;
-    logger.debug('prompting context: %s', JSON.stringify(contextForPrompting));
-  } else {
-    context = generateContext(
-      contextFile,
-      configDict.default_context,
-      extraContext,
-    );
-    contextForPrompting = context;
-  }
-
-  // Preserve the original cookiecutter options
-  context._cookiecutter = Object.fromEntries(
-    Object.entries(context.biscuitcutter).filter(([k]) => !k.startsWith('_')),
+  logger.debug(
+    'Config loaded: %d variables, suffix=%s',
+    config.variables.length,
+    config.templatesSuffix,
   );
 
-  // Check for nested templates
-  const contextKeys = new Set(Object.keys(context.biscuitcutter));
-  if (contextKeys.has('template') || contextKeys.has('templates')) {
-    const nestedTemplate = await chooseNestedTemplate(
-      context,
-      repoDir,
-      noInput,
-    );
-    return biscuitcutter({
-      ...options,
-      template: nestedTemplate,
-    });
+  // Apply user default_context to variable defaults (cookiecutter/biscuitcutter only)
+  if (templateType !== 'copier' && configDict.default_context) {
+    for (const variable of config.variables) {
+      if (variable.name in configDict.default_context) {
+        variable.default = configDict.default_context[variable.name];
+      }
+    }
   }
 
-  // Prompt user for config
-  if (contextForPrompting.biscuitcutter && Object.keys(contextForPrompting.biscuitcutter).length > 0) {
-    const promptedConfig = await promptForConfig(contextForPrompting, noInput);
-    Object.assign(context.biscuitcutter, promptedConfig);
+  // Handle nested templates (cookiecutter/biscuitcutter only)
+  if (templateType !== 'copier') {
+    const rawCtx = config.rawContext;
+    if ('template' in rawCtx || 'templates' in rawCtx) {
+      const legacyCtx = { biscuitcutter: { ...rawCtx } };
+      const nestedTemplate = await chooseNestedTemplate(legacyCtx, repoDir, noInput);
+      return biscuitcutter({ ...options, template: nestedTemplate });
+    }
   }
 
+  // Load replay file and determine which variables still need prompting
+  let savedVariables: Record<string, any> = {};
+  let variablesToPrompt = config.variables;
+  if (replay && templateType !== 'copier') {
+    let replayData: Record<string, any> | undefined;
+    if (typeof replay === 'boolean') {
+      replayData = load(configDict.replay_dir, templateName);
+    } else {
+      const parsed = path.parse(replay as string);
+      replayData = load(parsed.dir, parsed.name);
+    }
+    if (replayData) {
+      savedVariables = replayData.biscuitcutter || {};
+      variablesToPrompt = config.variables.filter((v) => !(v.name in savedVariables));
+    }
+  }
+
+  // Apply extraContext to variable defaults before prompting so cross-variable
+  // template expressions (e.g. project_slug derived from project_name) resolve
+  // against the override values rather than the template defaults.
+  if (extraContext) {
+    for (const variable of variablesToPrompt) {
+      if (variable.name in extraContext) {
+        variable.default = extraContext[variable.name];
+      }
+    }
+  }
+
+  // Prompt for variables
+  const env = adapter.createEnvironment(config, {}, [repoDir]);
+  const promptedVariables = await promptForConfigWithAdapter(
+    variablesToPrompt,
+    {},
+    env,
+    noInput,
+  );
+
+  const userVariables = { ...savedVariables, ...promptedVariables };
+
+  // Merge any remaining extraContext keys not covered by variable prompting
+  if (extraContext) {
+    Object.assign(userVariables, extraContext);
+  }
+
+  // Build the template context with format-specific metadata
+  const metadata: Record<string, any> = templateType === 'copier'
+    ? { src_path: template, dst_path: path.resolve(outputDir) }
+    : {
+      _template: template,
+      _output_dir: path.resolve(outputDir),
+      _repo_dir: repoDir,
+      _checkout: checkout,
+    };
+
+  const context = adapter.buildContext(userVariables, metadata);
   logger.debug('context is %s', JSON.stringify(context));
 
-  // Include template dir or url in the context dict
-  context.biscuitcutter._template = template;
-  context.biscuitcutter._output_dir = path.resolve(outputDir);
-  context.biscuitcutter._repo_dir = repoDir;
-  context.biscuitcutter._checkout = checkout;
+  // Save replay file (cookiecutter/biscuitcutter only)
+  if (templateType !== 'copier') {
+    dump(configDict.replay_dir, templateName, context);
+  }
 
-  dump(configDict.replay_dir, templateName, context);
+  // For Copier, derive output dir name from user variables; for others let
+  // generateFilesWithAdapter fall back to the template directory name.
+  const outputDirName = templateType === 'copier'
+    ? (userVariables.project_slug || userVariables.project_name || templateName)
+    : undefined;
 
-  // Create project from local context and project template
-  const result = generateFiles(
+  const result = generateFilesWithAdapter(
     repoDir,
+    adapter,
+    config,
     context,
     outputDir,
     overwriteIfExists,
     skipIfFileExists,
     acceptHooks,
     keepProjectOnFailure,
+    outputDirName,
   );
 
-  // Write template state file for update tracking
-  try {
-    const commit = isGitRepo(baseRepoDir) ? getLatestCommit(baseRepoDir) : null;
-    // Filter out private variables (they're machine-specific and not useful for tracking)
-    const filteredContext = filterPublicContext(context.biscuitcutter);
-    const templateState: TemplateState = {
-      template,
-      commit: commit || 'unknown',
-      checkout: checkout || null,
-      context: filteredContext,
-      directory: directory || null,
-    };
-    writeTemplateState(result, templateState);
-    logger.debug('Wrote template state to %s/.biscuitcutter.json', result);
-  } catch (e) {
-    logger.debug('Could not write template state file: %s', e);
+  // Run post-generation tasks (Copier only)
+  if (templateType === 'copier' && acceptHooks && config.tasks.length > 0) {
+    runCopierTasks(config.tasks, result, context);
   }
 
-  // Cleanup (if required)
+  // Write state/answers file
+  try {
+    const commit = isGitRepo(baseRepoDir) ? getLatestCommit(baseRepoDir) : null;
+    adapter.writeStateFile(
+      result,
+      template,
+      commit || 'unknown',
+      checkout,
+      context,
+      directory,
+    );
+    logger.debug('Wrote state files to %s', result);
+  } catch (e) {
+    logger.debug('Could not write template state files: %s', e);
+  }
+
   if (cleanup) {
     rmtree(repoDir);
   }
