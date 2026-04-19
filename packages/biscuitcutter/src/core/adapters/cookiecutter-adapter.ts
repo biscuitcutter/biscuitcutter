@@ -6,7 +6,6 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
 import * as nunjucks from 'nunjucks';
 import { getLogger } from '../../utils/log';
 import {
@@ -34,6 +33,7 @@ function minimatch(filepath: string, pattern: string): boolean {
   return new RegExp(regexStr).test(filepath);
 }
 
+/* eslint-disable class-methods-use-this -- methods implement TemplateAdapter interface */
 export class CookiecutterAdapter implements TemplateAdapter {
   readonly type: TemplateType;
 

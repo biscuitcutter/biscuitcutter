@@ -6,8 +6,12 @@
 
 // Core business logic
 export { biscuitcutter, BiscuitCutterOptions } from './core/main';
-export { generateContext, generateFiles, generateFile, generateFilesWithAdapter } from './core/generate';
-export { promptForConfig, promptForConfigWithAdapter, chooseNestedTemplate, renderVariable } from './core/prompt';
+export {
+  generateContext, generateFiles, generateFile, generateFilesWithAdapter,
+} from './core/generate';
+export {
+  promptForConfig, promptForConfigWithAdapter, chooseNestedTemplate, renderVariable,
+} from './core/prompt';
 export { dump as replayDump, load as replayLoad } from './core/replay';
 export { findTemplate } from './core/find';
 

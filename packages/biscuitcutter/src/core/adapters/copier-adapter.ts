@@ -18,9 +18,8 @@ import {
   TemplateType,
   TemplateVariable,
 } from './types';
-import { createStrictEnvironment } from '../../templating';
 import { registerDefaultExtensions } from '../../templating/extensions';
-import { patchNunjucksRuntime, wrapRenderString } from '../../templating/extensions/polyfills';
+import { wrapRenderString } from '../../templating/extensions/polyfills';
 
 const logger = getLogger('biscuitcutter.adapters.copier');
 
@@ -30,24 +29,34 @@ const DEFAULT_TEMPLATES_SUFFIX = '.jinja';
 /** Default answers file path. */
 const DEFAULT_ANSWERS_FILE = '.copier-answers.yml';
 
-/** Copier settings keys (prefixed with underscore). */
-const COPIER_SETTINGS_KEYS = new Set([
-  '_templates_suffix',
-  '_jinja_extensions',
-  '_envops',
-  '_answers_file',
-  '_exclude',
-  '_skip_if_exists',
-  '_subdirectory',
-  '_tasks',
-  '_migrations',
-  '_version',
-  '_min_copier_version',
-  '_message_before_copy',
-  '_message_after_copy',
-  '_message_before_update',
-  '_message_after_update',
-]);
+function inferType(value: any): TemplateVariable['type'] {
+  if (typeof value === 'boolean') return 'bool';
+  if (typeof value === 'number') {
+    return Number.isInteger(value) ? 'int' : 'float';
+  }
+  if (Array.isArray(value)) return 'choice';
+  if (typeof value === 'object' && value !== null) return 'dict';
+  return 'str';
+}
+
+function inferTypeFromValue(value: any): string {
+  if (value === undefined || value === null) return 'str';
+  if (typeof value === 'boolean') return 'bool';
+  if (typeof value === 'number') return Number.isInteger(value) ? 'int' : 'float';
+  return 'str';
+}
+
+function mapCopierType(typeName: string): TemplateVariable['type'] {
+  switch (typeName) {
+    case 'str': return 'str';
+    case 'int': return 'int';
+    case 'float': return 'float';
+    case 'bool': return 'bool';
+    case 'json': return 'json';
+    case 'yaml': return 'yaml';
+    default: return 'str';
+  }
+}
 
 /**
  * Parse a Copier variable definition from copier.yml.
@@ -103,35 +112,6 @@ function parseCopierVariable(name: string, definition: any): TemplateVariable {
   }
 
   return variable;
-}
-
-function inferType(value: any): TemplateVariable['type'] {
-  if (typeof value === 'boolean') return 'bool';
-  if (typeof value === 'number') {
-    return Number.isInteger(value) ? 'int' : 'float';
-  }
-  if (Array.isArray(value)) return 'choice';
-  if (typeof value === 'object' && value !== null) return 'dict';
-  return 'str';
-}
-
-function inferTypeFromValue(value: any): string {
-  if (value === undefined || value === null) return 'str';
-  if (typeof value === 'boolean') return 'bool';
-  if (typeof value === 'number') return Number.isInteger(value) ? 'int' : 'float';
-  return 'str';
-}
-
-function mapCopierType(typeName: string): TemplateVariable['type'] {
-  switch (typeName) {
-    case 'str': return 'str';
-    case 'int': return 'int';
-    case 'float': return 'float';
-    case 'bool': return 'bool';
-    case 'json': return 'json';
-    case 'yaml': return 'yaml';
-    default: return 'str';
-  }
 }
 
 /**
@@ -192,6 +172,7 @@ function matchesExcludePattern(filePath: string, pattern: string): boolean {
   }
 }
 
+/* eslint-disable class-methods-use-this -- methods implement TemplateAdapter interface */
 export class CopierAdapter implements TemplateAdapter {
   readonly type: TemplateType = 'copier';
 

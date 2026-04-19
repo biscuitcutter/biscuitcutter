@@ -108,7 +108,7 @@ export async function biscuitcutter(options: BiscuitCutterOptions): Promise<stri
   logger.debug('Detected template type: %s', templateType);
 
   if (templateType === 'copier') {
-    return biscuitcutterCopier(
+    return biscuitcutterCopier( // eslint-disable-line @typescript-eslint/no-use-before-define
       repoDir,
       baseRepoDir,
       templateName,
@@ -265,12 +265,15 @@ async function biscuitcutterCopier(
   const adapter = createAdapter('copier');
   const config = adapter.loadConfig(repoDir);
 
-  logger.debug('Copier config loaded: %d variables, suffix=%s',
-    config.variables.length, config.templatesSuffix);
+  logger.debug(
+    'Copier config loaded: %d variables, suffix=%s',
+    config.variables.length,
+    config.templatesSuffix,
+  );
 
   // Prompt for variables using the adapter-aware prompting
   const env = adapter.createEnvironment(config, {}, [repoDir]);
-  let userVariables = await promptForConfigWithAdapter(
+  const userVariables = await promptForConfigWithAdapter(
     config.variables,
     {},
     env,

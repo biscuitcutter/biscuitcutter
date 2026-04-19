@@ -167,7 +167,7 @@ export function readTemplateState(projectDir: string): TemplateState {
   // Try Copier answers file
   const copierAnswers = path.join(projectDir, '.copier-answers.yml');
   if (fs.existsSync(copierAnswers)) {
-    return readCopierAnswersAsState(copierAnswers);
+    return readCopierAnswersAsState(copierAnswers); // eslint-disable-line @typescript-eslint/no-use-before-define
   }
 
   // Neither found — throw the standard error
