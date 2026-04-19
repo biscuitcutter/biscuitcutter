@@ -458,7 +458,7 @@ export async function promptForConfigWithAdapter(
   env: nunjucks.Environment,
   noInput: boolean = false,
 ): Promise<Record<string, any>> {
-  const result: Record<string, any> = {};
+  const result: Record<string, any> = Object.create(context ?? null);
   const visibleVars = variables.filter((v) => !v.name.startsWith('_'));
   const size = visibleVars.length;
   let count = 0;
