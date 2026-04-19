@@ -9,15 +9,13 @@ import * as path from 'path';
 import { getLogger } from '../utils/log';
 import { getUserConfig } from '../config/config';
 import { InvalidModeError } from '../utils/exceptions';
-import { generateContext, generateFiles, generateFilesWithAdapter } from './generate';
+import { generateFilesWithAdapter } from './generate';
 import { runPrePromptHook, runCopierTasks } from './hooks';
-import { chooseNestedTemplate, promptForConfig, promptForConfigWithAdapter } from './prompt';
+import { chooseNestedTemplate, promptForConfigWithAdapter } from './prompt';
 import { dump, load } from './replay';
 import { determineRepoDir } from '../repository/repository';
 import { rmtree } from '../utils/utils';
-import { writeTemplateState, TemplateState } from './tracking';
 import { getLatestCommit, isGitRepo } from '../utils/git';
-import { filterPublicContext, findContextFile } from './template-helpers';
 import { detectTemplateType, createAdapter } from './adapters/detect';
 
 const logger = getLogger('biscuitcutter.main');
@@ -95,7 +93,6 @@ export async function biscuitcutter(options: BiscuitCutterOptions): Promise<stri
   let repoDir: string = baseRepoDir;
   let cleanup = cleanupBaseRepoDir;
 
-  // Run pre_prompt hook
   if (acceptHooks) {
     repoDir = runPrePromptHook(baseRepoDir);
   }
@@ -103,203 +100,93 @@ export async function biscuitcutter(options: BiscuitCutterOptions): Promise<stri
 
   const templateName = path.basename(path.resolve(repoDir));
 
-  // Detect template type and use adapter pipeline
   const templateType = detectTemplateType(repoDir);
   logger.debug('Detected template type: %s', templateType);
 
-  if (templateType === 'copier') {
-    return biscuitcutterCopier( // eslint-disable-line @typescript-eslint/no-use-before-define
-      repoDir,
-      baseRepoDir,
-      templateName,
-      options,
-      configDict,
-      cleanup,
-      cleanupBaseRepoDir,
-    );
-  }
-
-  // --- Cookiecutter / BiscuitCutter pipeline (existing behavior) ---
-
-  let contextFromReplayFile: Record<string, any> | undefined;
-  if (replay) {
-    if (typeof replay === 'boolean') {
-      contextFromReplayFile = load(configDict.replay_dir, templateName);
-    } else {
-      const parsed = path.parse(replay);
-      contextFromReplayFile = load(parsed.dir, parsed.name);
-    }
-  }
-
-  const contextFile = findContextFile(repoDir);
-  logger.debug('context_file is %s', contextFile);
-
-  let context: Record<string, any>;
-  let contextForPrompting: Record<string, any>;
-
-  if (replay && contextFromReplayFile) {
-    context = generateContext(
-      contextFile,
-      configDict.default_context,
-      null,
-    );
-    logger.debug('replayfile context: %s', JSON.stringify(contextFromReplayFile));
-    const itemsForPrompting: Record<string, any> = {};
-    for (const [k, v] of Object.entries(context.biscuitcutter)) {
-      if (!(k in contextFromReplayFile.biscuitcutter)) {
-        itemsForPrompting[k] = v;
-      }
-    }
-    contextForPrompting = { biscuitcutter: itemsForPrompting };
-    context = contextFromReplayFile;
-    logger.debug('prompting context: %s', JSON.stringify(contextForPrompting));
-  } else {
-    context = generateContext(
-      contextFile,
-      configDict.default_context,
-      extraContext,
-    );
-    contextForPrompting = context;
-  }
-
-  // Preserve the original cookiecutter options
-  context._cookiecutter = Object.fromEntries(
-    Object.entries(context.biscuitcutter).filter(([k]) => !k.startsWith('_')),
-  );
-
-  // Check for nested templates
-  const contextKeys = new Set(Object.keys(context.biscuitcutter));
-  if (contextKeys.has('template') || contextKeys.has('templates')) {
-    const nestedTemplate = await chooseNestedTemplate(
-      context,
-      repoDir,
-      noInput,
-    );
-    return biscuitcutter({
-      ...options,
-      template: nestedTemplate,
-    });
-  }
-
-  // Prompt user for config
-  if (contextForPrompting.biscuitcutter && Object.keys(contextForPrompting.biscuitcutter).length > 0) {
-    const promptedConfig = await promptForConfig(contextForPrompting, noInput);
-    Object.assign(context.biscuitcutter, promptedConfig);
-  }
-
-  logger.debug('context is %s', JSON.stringify(context));
-
-  // Include template dir or url in the context dict
-  context.biscuitcutter._template = template;
-  context.biscuitcutter._output_dir = path.resolve(outputDir);
-  context.biscuitcutter._repo_dir = repoDir;
-  context.biscuitcutter._checkout = checkout;
-
-  dump(configDict.replay_dir, templateName, context);
-
-  // Create project from local context and project template
-  const result = generateFiles(
-    repoDir,
-    context,
-    outputDir,
-    overwriteIfExists,
-    skipIfFileExists,
-    acceptHooks,
-    keepProjectOnFailure,
-  );
-
-  // Write template state file for update tracking
-  try {
-    const commit = isGitRepo(baseRepoDir) ? getLatestCommit(baseRepoDir) : null;
-    // Filter out private variables (they're machine-specific and not useful for tracking)
-    const filteredContext = filterPublicContext(context.biscuitcutter);
-    const templateState: TemplateState = {
-      template,
-      commit: commit || 'unknown',
-      checkout: checkout || null,
-      context: filteredContext,
-      directory: directory || null,
-    };
-    writeTemplateState(result, templateState);
-    logger.debug('Wrote template state to %s/.biscuitcutter.json', result);
-  } catch (e) {
-    logger.debug('Could not write template state file: %s', e);
-  }
-
-  // Cleanup (if required)
-  if (cleanup) {
-    rmtree(repoDir);
-  }
-  if (cleanupBaseRepoDir) {
-    rmtree(baseRepoDir);
-  }
-
-  return result;
-}
-
-/**
- * Copier-specific pipeline using the adapter system.
- */
-async function biscuitcutterCopier(
-  repoDir: string,
-  baseRepoDir: string,
-  templateName: string,
-  options: BiscuitCutterOptions,
-  _configDict: any,
-  cleanup: boolean,
-  cleanupBaseRepoDir: boolean,
-): Promise<string> {
-  const {
-    template,
-    checkout = null,
-    noInput = false,
-    extraContext = null,
-    overwriteIfExists = false,
-    outputDir = '.',
-    skipIfFileExists = false,
-    acceptHooks = true,
-    keepProjectOnFailure = false,
-    directory = null,
-  } = options;
-
-  const adapter = createAdapter('copier');
+  const adapter = createAdapter(templateType);
   const config = adapter.loadConfig(repoDir);
 
   logger.debug(
-    'Copier config loaded: %d variables, suffix=%s',
+    'Config loaded: %d variables, suffix=%s',
     config.variables.length,
     config.templatesSuffix,
   );
 
-  // Prompt for variables using the adapter-aware prompting
+  // Apply user default_context to variable defaults (cookiecutter/biscuitcutter only)
+  if (templateType !== 'copier' && configDict.default_context) {
+    for (const variable of config.variables) {
+      if (variable.name in configDict.default_context) {
+        variable.default = configDict.default_context[variable.name];
+      }
+    }
+  }
+
+  // Handle nested templates (cookiecutter/biscuitcutter only)
+  if (templateType !== 'copier') {
+    const rawCtx = config.rawContext;
+    if ('template' in rawCtx || 'templates' in rawCtx) {
+      const legacyCtx = { biscuitcutter: { ...rawCtx } };
+      const nestedTemplate = await chooseNestedTemplate(legacyCtx, repoDir, noInput);
+      return biscuitcutter({ ...options, template: nestedTemplate });
+    }
+  }
+
+  // Load replay file and determine which variables still need prompting
+  let savedVariables: Record<string, any> = {};
+  let variablesToPrompt = config.variables;
+  if (replay && templateType !== 'copier') {
+    let replayData: Record<string, any> | undefined;
+    if (typeof replay === 'boolean') {
+      replayData = load(configDict.replay_dir, templateName);
+    } else {
+      const parsed = path.parse(replay as string);
+      replayData = load(parsed.dir, parsed.name);
+    }
+    if (replayData) {
+      savedVariables = replayData.biscuitcutter || {};
+      variablesToPrompt = config.variables.filter((v) => !(v.name in savedVariables));
+    }
+  }
+
+  // Prompt for variables
   const env = adapter.createEnvironment(config, {}, [repoDir]);
-  const userVariables = await promptForConfigWithAdapter(
-    config.variables,
+  const promptedVariables = await promptForConfigWithAdapter(
+    variablesToPrompt,
     {},
     env,
     noInput,
   );
 
-  // Apply extra context overrides
+  const userVariables = { ...savedVariables, ...promptedVariables };
+
   if (extraContext) {
     Object.assign(userVariables, extraContext);
   }
 
-  // Build the template context
-  const context = adapter.buildContext(userVariables, {
-    src_path: template,
-    dst_path: path.resolve(outputDir),
-  });
+  // Build the template context with format-specific metadata
+  const metadata: Record<string, any> = templateType === 'copier'
+    ? { src_path: template, dst_path: path.resolve(outputDir) }
+    : {
+      _template: template,
+      _output_dir: path.resolve(outputDir),
+      _repo_dir: repoDir,
+      _checkout: checkout,
+    };
 
-  logger.debug('Copier context: %s', JSON.stringify(context));
+  const context = adapter.buildContext(userVariables, metadata);
+  logger.debug('context is %s', JSON.stringify(context));
 
-  // Determine the output directory name
-  // For Copier, we typically use the project_slug or project_name variable
-  const outputDirName = userVariables.project_slug
-    || userVariables.project_name
-    || templateName;
+  // Save replay file (cookiecutter/biscuitcutter only)
+  if (templateType !== 'copier') {
+    dump(configDict.replay_dir, templateName, context);
+  }
 
-  // Generate files using adapter pipeline
+  // For Copier, derive output dir name from user variables; for others let
+  // generateFilesWithAdapter fall back to the template directory name.
+  const outputDirName = templateType === 'copier'
+    ? (userVariables.project_slug || userVariables.project_name || templateName)
+    : undefined;
+
   const result = generateFilesWithAdapter(
     repoDir,
     adapter,
@@ -313,12 +200,12 @@ async function biscuitcutterCopier(
     outputDirName,
   );
 
-  // Run Copier tasks
-  if (acceptHooks && config.tasks.length > 0) {
+  // Run post-generation tasks (Copier only)
+  if (templateType === 'copier' && acceptHooks && config.tasks.length > 0) {
     runCopierTasks(config.tasks, result, context);
   }
 
-  // Write state files
+  // Write state/answers file
   try {
     const commit = isGitRepo(baseRepoDir) ? getLatestCommit(baseRepoDir) : null;
     adapter.writeStateFile(
@@ -329,12 +216,11 @@ async function biscuitcutterCopier(
       context,
       directory,
     );
-    logger.debug('Wrote Copier state files to %s', result);
+    logger.debug('Wrote state files to %s', result);
   } catch (e) {
     logger.debug('Could not write template state files: %s', e);
   }
 
-  // Cleanup
   if (cleanup) {
     rmtree(repoDir);
   }
