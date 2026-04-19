@@ -128,8 +128,12 @@ function parseTasks(rawTasks: any[]): TemplateTask[] {
       return { command: task };
     }
     if (typeof task === 'object' && task !== null) {
+      const rawCommand = task.command ?? task.cmd;
+      if (rawCommand === undefined || rawCommand === null) {
+        throw new Error('Invalid Copier task: expected "command" or "cmd" to be defined.');
+      }
       return {
-        command: task.command || task.cmd,
+        command: rawCommand,
         when: task.when ? String(task.when) : undefined,
         workingDirectory: task.working_directory,
       };
@@ -176,6 +180,8 @@ function matchesExcludePattern(filePath: string, pattern: string): boolean {
 export class CopierAdapter implements TemplateAdapter {
   readonly type: TemplateType = 'copier';
 
+  private answersFilePath: string = DEFAULT_ANSWERS_FILE;
+
   loadConfig(repoDir: string): TemplateConfig {
     const configPath = this.findConfigFile(repoDir);
     let rawYaml: Record<string, any> = {};
@@ -210,14 +216,15 @@ export class CopierAdapter implements TemplateAdapter {
     // Parse settings
     const templatesSuffix = settings._templates_suffix || DEFAULT_TEMPLATES_SUFFIX;
     const answersFile = settings._answers_file || DEFAULT_ANSWERS_FILE;
+    this.answersFilePath = answersFile;
     const subdirectory = settings._subdirectory || null;
     const exclude = Array.isArray(settings._exclude) ? settings._exclude : [];
     const skipIfExists = Array.isArray(settings._skip_if_exists) ? settings._skip_if_exists : [];
     const tasks = parseTasks(settings._tasks || []);
     const envOps = settings._envops || {};
 
-    // Always exclude the copier config file and answers file from output
-    const defaultExcludes = ['copier.yml', 'copier.yaml', '.copier-answers.yml'];
+    // Always exclude the copier config file and resolved answers file from output
+    const defaultExcludes = ['copier.yml', 'copier.yaml', answersFile];
     const allExcludes = [...new Set([...defaultExcludes, ...exclude])];
 
     return {
@@ -356,7 +363,7 @@ export class CopierAdapter implements TemplateAdapter {
     const yamlContent = YAML.stringify(answers, { lineWidth: 0 });
     const header = '# Changes here will be overwritten by Copier/BiscuitCutter\n';
     fs.writeFileSync(
-      path.join(projectDir, DEFAULT_ANSWERS_FILE),
+      path.join(projectDir, this.answersFilePath),
       header + yamlContent,
       'utf-8',
     );

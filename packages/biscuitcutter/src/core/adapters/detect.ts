@@ -67,17 +67,7 @@ export function createAdapterForRepo(repoDir: string): TemplateAdapter {
 }
 
 /**
- * Check if a repository directory contains any supported template config.
+ * Re-export the canonical repository template-config check to avoid
+ * duplicated implementations drifting over time.
  */
-export function repositoryHasTemplateConfig(repoDir: string): boolean {
-  if (!fs.existsSync(repoDir) || !fs.statSync(repoDir).isDirectory()) {
-    return false;
-  }
-
-  return (
-    fs.existsSync(path.join(repoDir, 'copier.yml'))
-    || fs.existsSync(path.join(repoDir, 'copier.yaml'))
-    || fs.existsSync(path.join(repoDir, 'biscuitcutter.json'))
-    || fs.existsSync(path.join(repoDir, 'cookiecutter.json'))
-  );
-}
+export { repositoryHasTemplateConfig } from '../../repository/repository';

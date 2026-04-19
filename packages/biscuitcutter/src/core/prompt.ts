@@ -454,7 +454,7 @@ export async function chooseNestedTemplate(
  */
 export async function promptForConfigWithAdapter(
   variables: import('./adapters/types').TemplateVariable[],
-  context: Record<string, any>,
+  _context: Record<string, any>,
   env: nunjucks.Environment,
   noInput: boolean = false,
 ): Promise<Record<string, any>> {
@@ -510,7 +510,7 @@ export async function promptForConfigWithAdapter(
       const labels = variable.choices.map((c) => c.label || String(c.value));
       const values = variable.choices.map((c) => c.value);
       if (helpSuffix) console.log(`${prefix}${helpSuffix.trim()}`);
-      const selected = await readUserChoice(variable.name, labels);
+      const selected = await readUserChoice(variable.name, labels, undefined, prefix);
       const idx = labels.indexOf(selected);
       result[variable.name] = idx >= 0 ? values[idx] : selected;
     } else if (variable.type === 'multichoice' && variable.choices) {

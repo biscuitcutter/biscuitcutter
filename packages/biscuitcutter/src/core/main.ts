@@ -245,7 +245,7 @@ async function biscuitcutterCopier(
   baseRepoDir: string,
   templateName: string,
   options: BiscuitCutterOptions,
-  configDict: any,
+  _configDict: any,
   cleanup: boolean,
   cleanupBaseRepoDir: boolean,
 ): Promise<string> {
